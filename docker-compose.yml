@@ -1,23 +1,43 @@
-version: '3.8'
-
 networks:
   financial-ai:
     driver: bridge
 
+volumes:
+  postgres_data:
+
 services:
+
+  # ── PostgreSQL ────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: financial-ai-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: financial
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - financial-ai
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   # ── Gmail tool service ─────────────────────────────────────────────────────
   gmail-service:
     build:
-      context: ./financial-assistance-ai-gmail-service
+      context: ./gmail-service
     container_name: financial-ai-gmail
     ports:
       - "8000:8000"
     volumes:
-      # credentials.json is placed in the repo root and shared by both services
       - ./credentials.json:/app/credentials.json:ro
-      # token.json is written by gmail-auth and read by this service
-      - ./financial-assistance-ai-gmail-service/token.json:/app/token.json
+      - ./gmail-service/token.json:/app/token.json
     environment:
       - PYTHONUNBUFFERED=1
     networks:
@@ -33,12 +53,12 @@ services:
   # ── One-shot OAuth helper (run manually when token.json is missing/expired) ─
   gmail-auth:
     build:
-      context: ./financial-assistance-ai-gmail-service
+      context: ./gmail-service
     container_name: financial-ai-gmail-auth
     ports:
       - "8080:8080"
     volumes:
-      - ./financial-assistance-ai-gmail-service:/app
+      - ./gmail-service:/app
       - ./credentials.json:/app/credentials.json
     command: python auth.py
     environment:
@@ -46,4 +66,25 @@ services:
     networks:
       - financial-ai
     profiles:
-      - auth
+      - manual
+
+  # ── LangGraph flow ────────────────────────────────────────────────────────
+  langgraph:
+    build:
+      context: ./langgraph
+    container_name: financial-ai-langgraph
+    env_file:
+      - ./langgraph/.env
+    environment:
+      - GMAIL_SERVICE_URL=http://gmail-service:8000
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/financial
+      - PYTHONUNBUFFERED=1
+    networks:
+      - financial-ai
+    depends_on:
+      postgres:
+        condition: service_healthy
+      gmail-service:
+        condition: service_healthy
+    profiles:
+      - run
