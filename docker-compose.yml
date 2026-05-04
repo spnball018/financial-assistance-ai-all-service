@@ -1,0 +1,48 @@
+version: '3.8'
+
+networks:
+  financial-ai:
+    driver: bridge
+
+services:
+
+  # ── Gmail tool service ─────────────────────────────────────────────────────
+  gmail-service:
+    build:
+      context: ./financial-assistance-ai-gmail-service
+    container_name: financial-ai-gmail
+    ports:
+      - "8000:8000"
+    volumes:
+      # credentials.json must be placed in the submodule directory before first run
+      - ./financial-assistance-ai-gmail-service/credentials.json:/app/credentials.json:ro
+      # token.json is written by the auth flow and read by the service
+      - ./financial-assistance-ai-gmail-service/token.json:/app/token.json
+    environment:
+      - PYTHONUNBUFFERED=1
+    networks:
+      - financial-ai
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # ── One-shot OAuth helper (run manually when token.json is missing/expired) ─
+  gmail-auth:
+    build:
+      context: ./financial-assistance-ai-gmail-service
+    container_name: financial-ai-gmail-auth
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./financial-assistance-ai-gmail-service:/app
+    command: python auth.py
+    environment:
+      - PYTHONUNBUFFERED=1
+    networks:
+      - financial-ai
+    profiles:
+      - auth

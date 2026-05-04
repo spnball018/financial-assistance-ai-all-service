@@ -1,0 +1,3 @@
+[submodule "financial-assistance-ai-gmail-service"]
+	path = financial-assistance-ai-gmail-service
+	url = git@github.com:spnball018/financial-assistance-ai-gmail-service.git
