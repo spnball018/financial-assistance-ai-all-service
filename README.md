@@ -33,6 +33,8 @@ Place the file here:
 financial-assistance-ai-gmail-service/credentials.json
 ```
 
+Both the `gmail-auth` and `gmail-service` containers mount it from this location.
+
 ### Step 2: Run the OAuth flow (first time only)
 
 ```bash

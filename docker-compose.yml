@@ -14,9 +14,9 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      # credentials.json must be placed in the submodule directory before first run
-      - ./financial-assistance-ai-gmail-service/credentials.json:/app/credentials.json:ro
-      # token.json is written by the auth flow and read by the service
+      # credentials.json is placed in the repo root and shared by both services
+      - ./credentials.json:/app/credentials.json:ro
+      # token.json is written by gmail-auth and read by this service
       - ./financial-assistance-ai-gmail-service/token.json:/app/token.json
     environment:
       - PYTHONUNBUFFERED=1
@@ -39,6 +39,7 @@ services:
       - "8080:8080"
     volumes:
       - ./financial-assistance-ai-gmail-service:/app
+      - ./credentials.json:/app/credentials.json
     command: python auth.py
     environment:
       - PYTHONUNBUFFERED=1
