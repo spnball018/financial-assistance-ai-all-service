@@ -28,20 +28,28 @@ The Gmail service requires a one-time OAuth authentication before it can run.
 
 Follow the [Gmail service README](./financial-assistance-ai-gmail-service/README.md#prerequisites-get-google-cloud-credentials) to create a Google Cloud project and download `credentials.json`.
 
-Place the file here:
-```
-financial-assistance-ai-gmail-service/credentials.json
-```
+Place the file in the **repo root** (next to `docker-compose.yml`):
 
-Both the `gmail-auth` and `gmail-service` containers mount it from this location.
+```
+financial-assistance-ai-all-service/
+├── credentials.json        ← here
+├── docker-compose.yml
+└── financial-assistance-ai-gmail-service/
+```
 
 ### Step 2: Run the OAuth flow (first time only)
 
 ```bash
-docker compose --profile auth up gmail-auth
+docker compose --profile auth up --build gmail-auth
 ```
 
-Follow the link printed in the console, log in with your Gmail account, and grant access. A `token.json` file will be written to `financial-assistance-ai-gmail-service/token.json`.
+The console will print a URL — open it in your browser, log in with your Gmail account, and grant access. A `token.json` file will be written to `financial-assistance-ai-gmail-service/token.json`.
+
+> **If the container hangs after you authorize in the browser**, it means a previous run left the auth server waiting for a callback that never arrived. Stop it and rebuild:
+> ```bash
+> docker compose --profile auth down
+> docker compose --profile auth up --build gmail-auth
+> ```
 
 ### Step 3: Start all services
 
