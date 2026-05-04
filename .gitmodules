@@ -1,3 +1,7 @@
 [submodule "gmail-service"]
 	path = gmail-service
 	url = git@github.com:spnball018/financial-assistance-ai-gmail-service.git
+
+[submodule "langgraph"]
+	path = langgraph
+	url = git@github.com:spnball018/financial-assistance-ai-langgraph.git
