@@ -50,6 +50,25 @@ services:
       retries: 3
       start_period: 10s
 
+  # ── Credit card statement service ──────────────────────────────────────────
+  credit-card-statement-service:
+    build:
+      context: ./credit-card-statement-service
+    container_name: financial-ai-credit-card-statement
+    ports:
+      - "8001:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+    networks:
+      - financial-ai
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
   # ── One-shot OAuth helper (run manually when token.json is missing/expired) ─
   gmail-auth:
     build:
@@ -68,15 +87,19 @@ services:
     profiles:
       - manual
 
-  # ── LangGraph flow ────────────────────────────────────────────────────────
-  langgraph:
+  # ── LangGraph chatbot (interactive) ──────────────────────────────────────
+  chatbot:
     build:
       context: ./langgraph
-    container_name: financial-ai-langgraph
+    container_name: financial-ai-chatbot
+    command: python chatbot.py --label INBOX --max-results 20
+    stdin_open: true
+    tty: true
     env_file:
       - ./langgraph/.env
     environment:
       - GMAIL_SERVICE_URL=http://gmail-service:8000
+      - CREDIT_CARD_STATEMENT_SERVICE_URL=http://credit-card-statement-service:8000
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/financial
       - PYTHONUNBUFFERED=1
     networks:
@@ -85,6 +108,33 @@ services:
       postgres:
         condition: service_healthy
       gmail-service:
+        condition: service_healthy
+      credit-card-statement-service:
+        condition: service_healthy
+    profiles:
+      - chatbot
+
+  # ── LangGraph batch (non-interactive) ────────────────────────────────────
+  langgraph:
+    build:
+      context: ./langgraph
+    container_name: financial-ai-langgraph
+    command: python main.py --label INBOX --max-results 20
+    env_file:
+      - ./langgraph/.env
+    environment:
+      - GMAIL_SERVICE_URL=http://gmail-service:8000
+      - CREDIT_CARD_STATEMENT_SERVICE_URL=http://credit-card-statement-service:8000
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/financial
+      - PYTHONUNBUFFERED=1
+    networks:
+      - financial-ai
+    depends_on:
+      postgres:
+        condition: service_healthy
+      gmail-service:
+        condition: service_healthy
+      credit-card-statement-service:
         condition: service_healthy
     profiles:
       - run
