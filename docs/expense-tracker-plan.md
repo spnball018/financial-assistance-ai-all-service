@@ -72,12 +72,12 @@ PRD ต้องการให้ผู้ใช้กด Refresh แล้ว�
 
 | งาน | สถานะ |
 |---|---|
-| T0.2 โครง expense-api | เสร็จ (ยังไม่ได้ยืนยันด้วย docker compose) |
-| T0.3, T0.4 migration 0001, 0002 | เขียนแล้ว ยังไม่ได้รันกับ Postgres จริง |
-| T0.5 migration 0003 (raw_emails, email_sources) | เขียนแล้ว ยังไม่ได้รันกับ Postgres จริง |
+| T0.2 โครง expense-api | เสร็จ (container ขึ้นได้ใน docker compose แล้ว ตอนพัฒนาใช้ venv) |
+| T0.3, T0.4 migration 0001, 0002 | เสร็จ รันกับ DB จริงแล้ว |
+| T0.5 migration 0003 (raw_emails, email_sources) | เสร็จ รันกับ DB จริงแล้ว |
 | T1.1 gmail-service | เสร็จและทดสอบแล้ว (ยกเว้น endpoint ไฟล์แนบ) |
 | T1.2 parser KBank | เสร็จ ทดสอบกับอีเมลจริง 419 ฉบับ |
-| API: `/accounts`, `/categories`, `/email-sources` | เขียนแล้ว ยังไม่ได้ทดสอบกับ DB จริง |
+| API: `/accounts`, `/categories`, `/email-sources` | เสร็จ ใช้กับ DB จริงแล้ว |
 | T1.4 sync engine | เสร็จ ทดสอบกับ DB จริงแล้ว (ดู [sync-engine.md](sync-engine.md)) |
 | T3.1 Merchant Memory | เสร็จ (`categorize/normalize.py`, `categorize/memory.py`) |
 | T3.2 AI categorizer | adapter `gemini` / `vertex` / `none` เลือกด้วย env `CATEGORIZER` (registry `ADAPTERS` ใน `categorize/ai.py`) ลองกับ Google AI Studio (free tier) แล้ว: 152 รายการ ได้หมวด 79, Uncategorized 73 ใช้เวลา 27 วินาที |
