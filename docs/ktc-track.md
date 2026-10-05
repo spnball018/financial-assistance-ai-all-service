@@ -97,10 +97,19 @@ expense-api/
 - รายการ description ที่ยาวอาจขึ้นบรรทัดใหม่ในคอลัมน์ description ซึ่ง parser ต่อเข้ากับรายการก่อนหน้า
 - การจัด `type`: ยอดติดลบ → `payment` ถ้า description มี `PAYMENT`/`AUTOPAY`/`ชำระ` ไม่เช่นนั้น `refund` ยอดบวก → `interest` (`INTEREST`/`ดอกเบี้ย`), `fee` (`FEE`/`VAT`/`ค่าธรรมเนียม` เป็นคำเต็ม เพราะ `COFFEE` ต้องไม่ติด) นอกนั้น `purchase` คำที่ยังไม่เคยเห็นอาจถูกจัดเป็น `purchase` ผิด ต้องตรวจเมื่อเจอ statement ใหม่
 
-**K2. `expense-api/sources/ktc.py`**
-- หา attachment ที่เป็น PDF แล้วเรียก `POST {CREDIT_CARD_STATEMENT_SERVICE_URL}/parse-ktc-pdf` ด้วย httpx ซึ่ง env นี้มีใน compose ของ expense-api แล้ว
-- ถ้ายังไม่ได้ตั้งรหัสผ่าน ให้คืน `status="failed"` พร้อม error ว่ายังไม่ได้ตั้งรหัสผ่าน KTC
-- แปลงผลลัพธ์เป็นต้นไม้ตามกติกาในหัวข้อถัดไป
+**K2. `expense-api/sources/ktc.py`** (เสร็จ)
+- หา attachment ที่เป็น PDF (mime `application/pdf` หรือชื่อไฟล์ลงท้าย `.pdf`) แล้วเรียก `POST {CREDIT_CARD_STATEMENT_SERVICE_URL}/parse-ktc-pdf` ด้วย httpx (timeout 60 วินาที) ซึ่ง env นี้มีใน compose ของ expense-api แล้ว
+- `PARSER_VERSION = "ktc-1"`; `build_tree(json)` เป็นฟังก์ชันล้วนที่แปลงผลจาก K1 เป็นต้นไม้ ใช้ทดสอบโดยไม่ต้องมี PDF
+- ลำดับตัดสินใจ:
+  - ไม่มี PDF แนบ → `skipped` (โฆษณาไม่ต้องใช้รหัสผ่าน)
+  - ไม่มีรหัสผ่าน → `failed` "ยังไม่ได้ตั้งรหัสผ่าน KTC" และไม่เรียก service
+  - service ตอบ 401 → `failed` รหัสผ่านไม่ถูกต้อง, 422 → `failed` พร้อม `detail.code` ของ K1, ติดต่อ service ไม่ได้ หรือ HTTP อื่น → `failed` ข้อความ error ไม่มีรหัสผ่านหรือเนื้อหา PDF
+  - ไม่มี `statement_line` เหลือ → `skipped`
+- engine จะ parse อีเมลที่ `failed` ซ้ำเองในรอบถัดไป (ขั้นที่ 5 ใน `docs/sync-engine.md`) ดังนั้นเมื่อผู้ใช้ตั้งรหัสผ่านแล้ว sync อีกครั้งก็พอ
+- ทีละรายการ: payment, refund และยอด `<= 0` ไม่เป็นลูก (เก็บใน `raw.skipped_lines`) ส่วน `purchase`, `fee`, `interest` และ `other` ที่ยอดเป็นบวกเป็นลูก (`other` ยังไม่เคยเจอใน statement จริง)
+- `occurred_at` ของลูกใช้ transaction date ถ้ามี ไม่เช่นนั้นใช้ posting date; `dedup_key` ใช้ posting date, description, ยอดรูป `0.00`, approval code และลำดับซ้ำ
+- `source_ref` ของลูกคือ approval code (ถ้ามี) และ `description` ของ statement คือ `KTC e-Statement <statement date>`
+- ถ้าอีเมลมี PDF มากกว่า 1 ไฟล์ จะได้ statement หลาย root และถ้าไฟล์ใดล้มเหลว ทั้งอีเมลเป็น `failed`
 
 **K3. `expense-api/app/routers/ktc.py`: `PUT /settings/ktc-password`**
 - body `{ "password": "..." }` แล้วเรียก `app.secrets.set_setting("ktc_pdf_password", password)`
@@ -166,6 +175,6 @@ expense-api/
 | งาน | สถานะ |
 |---|---|
 | K1 `/parse-ktc-pdf` | เสร็จ: เทสต์ 8 ข้อผ่าน และทดสอบกับ statement จริง 1 ฉบับแล้ว (10 รายการ ตรวจยอดผ่าน) ยังไม่ได้ลองรันใน docker (ใช้ Python 3.10 ใน Dockerfile) และยังไม่ได้ curl กับ container |
-| K2 `sources/ktc.py` | stub |
+| K2 `sources/ktc.py` | เสร็จ: เทสต์ 13 ข้อ (ใช้ JSON สมมติ) และทดสอบ end-to-end กับ PDF จริงผ่าน service ในเครื่อง (8 ลูก + ข้าม 2) ยังไม่ได้รันผ่าน sync engine กับ DB จริง |
 | K3 รหัสผ่าน KTC | stub |
 | K4 เทสต์/fixture | ยังไม่เริ่ม |
