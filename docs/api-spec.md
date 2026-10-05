@@ -173,20 +173,86 @@ Response `{"is_set": true, "updated_at": "2026-10-05T07:00:00+00:00"}`
 
 ### รายการและรายงาน (T4.1)
 
-#### 📝 `GET /transactions?status=pending`
-คืนรายการเป็น tree (แม่ → ลูก) กรองตาม `status` (`pending | confirmed | ignored`)
+#### ✅ `GET /transactions`
+รายการระดับบนสุด (root) เรียงใหม่สุดก่อน แต่ละรายการมีลูกทั้งหมดซ้อนอยู่ใน `children` ตัวกรองใช้กับ root เท่านั้น ส่วนต้นไม้จะได้ครบทั้งต้นเสมอ
 
-#### 📝 `PATCH /transactions/{id}`
-แก้หมวด, ร้านค้า หรือคำอธิบายของรายการ การแก้หมวดจะตั้ง `category_source='user'`
+| Query | ชนิด | หมายเหตุ |
+|---|---|---|
+| `status` | `pending \| confirmed \| ignored` | |
+| `account_id` | int | |
+| `month` | `YYYY-MM` | ตามเวลา Asia/Bangkok |
+| `limit`, `offset` | int (1–1000, ค่าเริ่มต้น 200) | แบ่งหน้าตามจำนวน root |
 
-#### 📝 `POST /transactions/confirm`
-Request `{"ids": [1, 2]}` หรือ `{"all": true}` confirm ทั้งต้นไม้ และบันทึก Merchant Memory ใน DB transaction เดียวกัน
+```json
+{
+  "total": 152,
+  "items": [{
+    "id": 140, "parent_id": null, "account_id": 1, "counter_account_id": null,
+    "node_type": "payment", "kind": "expense", "status": "pending", "needs_review": false,
+    "amount": 269.0, "currency": "THB", "occurred_at": "2026-10-02T17:09:57+00:00", "has_time": true,
+    "source": "kbank_email", "channel": "bill_payment",
+    "merchant_raw": "MEB CORPORATION .,LTD", "merchant_key": "meb corporation ltd", "description": "bill_payment",
+    "category_id": 21, "category_source": "ai", "ai_confidence": 0.9, "ai_reason": "...",
+    "confirmed_at": null, "children": []
+  }]
+}
+```
+- `category_source`: `none` (ยังไม่มีหมวด) · `memory` · `ai` · `user` (ผู้ใช้เลือก) · `manual` (บันทึกเอง)
+- `channel` มาจาก parser เช่น `bill_payment`, `promptpay`, `transfer`, `donation`
+- `needs_review = true` เมื่อผลรวมของลูกไม่เท่ากับแม่
 
-#### 📝 `POST /transactions`
-สร้างรายการเอง: `amount`, `occurred_at`, `category_id` และ `account_id` บังคับ ได้ `status=confirmed` ทันที
+#### ✅ `GET /transactions/{id}`
+รายการเดียว (ไม่มี `children`) · `404` ถ้าไม่มี
 
-#### 📝 `GET /reports/summary?month=YYYY-MM`
-สรุปรายจ่ายรายเดือนจาก view `ledger.v_reportable_expenses` (เฉพาะ leaf ที่ confirmed และ kind=expense)
+#### ✅ `PATCH /transactions/{id}`
+แก้เฉพาะฟิลด์ที่ส่งมา
+```json
+{"category_id": 12, "description": "ค่ากาแฟประชุม", "status": "ignored"}
+```
+- `category_id`: ต้องเป็นหมวด leaf ของรายจ่าย (เลือกหมวดหลักที่มีหมวดย่อยไม่ได้) ตั้งแล้ว `category_source` จะเป็น `user` และจะไม่ถูก AI หรือ memory ทับ ถ้ารายการ confirm แล้ว การแก้หมวดจะบันทึก Merchant Memory ทันที
+- `status`: ตั้งได้แค่ `ignored` หรือ `pending` และมีผลกับทั้งต้นไม้ รายการที่ confirm แล้วเปลี่ยนสถานะกลับไม่ได้ ส่วนการ confirm ให้ใช้ endpoint ด้านล่าง
+
+Errors: `404` · `422` หมวดใช้ไม่ได้ หรือเปลี่ยนสถานะไม่ได้
+
+#### ✅ `POST /transactions/confirm`
+```json
+{"ids": [140, 141]}
+```
+หรือ `{"all": true}` เพื่อ confirm ทุกรายการ pending
+- confirm **ทั้งต้นไม้** ถ้าส่ง id ของลูกมา จะ confirm ทั้งต้นไม้ของ root นั้น
+- รายการรายจ่าย leaf ที่ยังไม่มีหมวดจะได้ "Uncategorized"
+- **Merchant Memory**: ทุก leaf ที่ confirm และมีหมวด (ยกเว้น Uncategorized) จะถูกจำไว้ และหมวดนั้นถูกใช้กับรายการ pending อื่นของร้านเดียวกันทันที เฉพาะรายการที่ `category_source` เป็น `none` หรือ `ai` (ไม่ทับที่ผู้ใช้เลือกเอง)
+- ทุกขั้นตอนอยู่ใน DB transaction เดียว
+
+```json
+{"confirmed": 2, "remembered": 1, "applied_to_pending": 3}
+```
+Errors: `404` มี id ที่ไม่มีอยู่ (ไม่มีอะไรถูก confirm) · `422` ไม่ได้ส่ง `ids` หรือ `all`
+
+#### ✅ `POST /transactions`
+บันทึกรายจ่ายเอง เช่น เงินสด ได้สถานะ `confirmed` ทันที (`node_type=manual`, `source=manual`)
+```json
+{"account_id": 1, "amount": "45.50", "occurred_at": "2026-09-20T12:30:00+07:00", "category_id": 3,
+ "merchant": "ร้านข้าวมันไก่", "description": null, "has_time": true}
+```
+- `occurred_at` ต้องมี timezone
+- ถ้าใส่ `merchant` จะบันทึก Merchant Memory ด้วย
+
+Response `201`: รายการที่สร้าง · `422` ยอดไม่เป็นบวก, ไม่มี timezone, ไม่มี account หรือหมวดใช้ไม่ได้
+
+#### ✅ `GET /reports/summary?month=YYYY-MM`
+สรุปรายจ่ายรายเดือนจาก view `ledger.v_reportable_expenses` (เฉพาะ leaf ที่ confirmed และเป็น expense) จึงไม่นับรายการแม่และ transfer เดือนคิดตามเวลา Asia/Bangkok
+```json
+{
+  "month": "2026-09", "total": 1150.0, "count": 4, "pending_not_counted": 52,
+  "categories": [
+    {"category_id": 1, "name_th": "อาหารและเครื่องดื่ม", "name_en": "Food & Dining", "count": 3, "amount": 450.0,
+     "subcategories": [{"category_id": 4, "name_th": "คาเฟ่/เบเกอรี่", "name_en": "Cafe & Bakery", "count": 3, "amount": 450.0}]}
+  ]
+}
+```
+- หมวดหลักเรียงตามยอดมากไปน้อย หมวดที่ไม่มีหมวดย่อย (เช่น บริจาค, Uncategorized) จะมี `subcategories` ว่าง
+- `pending_not_counted`: จำนวนรายการ root ที่ยัง pending ในเดือนนั้น (ยังไม่นับในยอด)
 
 ---
 
