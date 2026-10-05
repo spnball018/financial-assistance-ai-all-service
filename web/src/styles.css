@@ -113,6 +113,21 @@ table.settings .s-purpose { min-width: 200px; }
 table.settings tr.inactive td { opacity: 0.55; }
 table.settings tr.new-row td { background: var(--bg); }
 .error-text { color: var(--error); }
+.manual { max-width: 720px; }
+.form-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 12px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 8px; padding: 16px;
+}
+.form-grid label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+.form-grid input:not([type="checkbox"]), .form-grid select {
+  font: inherit; color: var(--text); padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface);
+}
+.form-grid .full { grid-column: 1 / -1; }
+.form-grid .inline { display: flex; gap: 8px; align-items: center; }
+.form-grid .actions { display: flex; gap: 12px; align-items: center; }
+.saved-list { margin-top: 8px; }
+@media (max-width: 640px) { .form-grid { grid-template-columns: 1fr; } }
 .ok-text { color: var(--ok); }
 .warn-text { color: var(--warn); }
 .neg { color: var(--error); }

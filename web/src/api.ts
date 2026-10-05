@@ -51,6 +51,16 @@ export const api = {
     },
   ) =>
     call<Txn>(`/transactions/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  createTransaction: (body: {
+    kind: "expense" | "income";
+    account_id: number;
+    amount: string;
+    occurred_at: string;
+    has_time: boolean;
+    category_id: number;
+    merchant: string | null;
+    description: string | null;
+  }) => call<Txn>("/transactions", { method: "POST", body: JSON.stringify(body) }),
   confirm: (body: { ids: number[] } | { all: true }) =>
     call<ConfirmResult>("/transactions/confirm", { method: "POST", body: JSON.stringify(body) }),
   sync: () => call<SyncResult>("/sync", { method: "POST" }),
