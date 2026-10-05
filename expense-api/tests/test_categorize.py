@@ -77,7 +77,7 @@ def test_low_confidence_and_invalid_category_become_uncategorized(cdb):
 def test_without_ai_rows_stay_none_for_later(cdb):
     t = add(cdb, "k1", "STARBUCKS")
     res = categorize_pending(cdb, None)
-    assert res == {"memory": 0, "ai": 0, "uncategorized": 0, "left": 1}
+    assert res == {"transfer": 0, "memory": 0, "ai": 0, "uncategorized": 0, "left": 1}
     assert row(cdb, t).category_source == "none" and row(cdb, t).merchant_key == "starbucks"
 
 

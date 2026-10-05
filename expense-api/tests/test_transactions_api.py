@@ -85,7 +85,7 @@ def test_confirm_teaches_memory_and_updates_same_merchant(api, db):
     b = add(db, "b", "STARBUCKS", src="ai", cat_id=cat(db, "Fuel"))      # AI guessed wrong
     c = add(db, "c", "STARBUCKS", src="user", cat_id=cat(db, "Fuel"))    # user chose: keep
     r = api.post("/transactions/confirm", json={"ids": [a]}).json()
-    assert r == {"confirmed": 1, "remembered": 1, "applied_to_pending": 1}
+    assert r == {"confirmed": 1, "remembered": 1, "remembered_transfers": 0, "applied_to_pending": 1}
     assert q(db, "SELECT category_id FROM ledger.merchant_memory WHERE merchant_key='starbucks'") == cafe
     assert q(db, "SELECT category_source FROM ledger.transactions WHERE id=:i", i=b) == "memory"
     assert q(db, "SELECT category_id FROM ledger.transactions WHERE id=:i", i=c) == cat(db, "Fuel")

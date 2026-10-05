@@ -1,12 +1,16 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { api, ApiError } from "./api";
-import { CategorySelect } from "./CategorySelect";
+import { CategorySelect, type Choice } from "./CategorySelect";
 import { CHANNEL_LABEL, fmtMoney, fmtWhen } from "./format";
-import type { Category, Status, Txn } from "./types";
+import type { Account, Category, Status, Txn } from "./types";
 
 const PAGE = 200;
 
 function SourceBadge({ t, uncategorizedId }: { t: Txn; uncategorizedId?: number }) {
+  if (t.kind === "transfer") {
+    const label = { account: "โอน (ตรงเลขบัญชี)", memory: "จำไว้ (โอน)" }[t.category_source as string] ?? "โอน";
+    return <span className="badge badge-transfer">{label}</span>;
+  }
   if (t.category_id === null) return <span className="badge badge-none">ยังไม่มีหมวด</span>;
   if (t.category_id === uncategorizedId) return <span className="badge badge-warn">ไม่แน่ใจ</span>;
   switch (t.category_source) {
@@ -27,7 +31,7 @@ function SourceBadge({ t, uncategorizedId }: { t: Txn; uncategorizedId?: number 
   }
 }
 
-export function ReviewPage({ categories }: { categories: Category[] }) {
+export function ReviewPage({ categories, accounts }: { categories: Category[]; accounts: Account[] }) {
   const [status, setStatus] = useState<Status>("pending");
   const [month, setMonth] = useState("");
   const [offset, setOffset] = useState(0);
@@ -68,11 +72,21 @@ export function ReviewPage({ categories }: { categories: Category[] }) {
     setItems((prev) => swap(prev));
   };
 
-  const setCategory = async (t: Txn, categoryId: number) => {
+  const setCategory = async (t: Txn, choice: Choice) => {
     try {
-      replace(await api.patch(t.id, { category_id: categoryId }));
+      replace(await api.patch(t.id, choice));
     } catch (e) {
       setMessage({ kind: "error", text: `เปลี่ยนหมวดไม่สำเร็จ: ${(e as Error).message}` });
+    }
+  };
+
+  // the rule is per payee, so reload: every row of that payee changes
+  const setRemember = async (t: Txn, remember: boolean) => {
+    try {
+      await api.patch(t.id, { remember });
+      await load();
+    } catch (e) {
+      setMessage({ kind: "error", text: `ตั้งค่าไม่สำเร็จ: ${(e as Error).message}` });
     }
   };
 
@@ -93,8 +107,9 @@ export function ReviewPage({ categories }: { categories: Category[] }) {
         kind: "ok",
         text:
           `ยืนยันแล้ว ${r.confirmed} รายการ` +
-          (r.remembered ? ` · จำหมวดของ ${r.remembered} ร้าน` : "") +
-          (r.applied_to_pending ? ` · อัปเดตหมวดให้รายการอื่นของร้านเดียวกัน ${r.applied_to_pending} รายการ` : ""),
+          (r.remembered - r.remembered_transfers ? ` · จำหมวดของ ${r.remembered - r.remembered_transfers} ร้าน` : "") +
+          (r.remembered_transfers ? ` · จำการโอน ${r.remembered_transfers} ปลายทาง` : "") +
+          (r.applied_to_pending ? ` · อัปเดตรายการอื่นของผู้รับเดียวกัน ${r.applied_to_pending} รายการ` : ""),
       });
       await load();
     } catch (e) {
@@ -160,18 +175,36 @@ export function ReviewPage({ categories }: { categories: Category[] }) {
           </td>
           <td className="c-amount num">{fmtMoney(t.amount)}</td>
           <td className="c-cat">
-            {isLeaf && t.kind === "expense" ? (
+            {isLeaf && (t.kind === "expense" || t.kind === "transfer") ? (
               <CategorySelect
                 categories={categories}
-                value={t.category_id}
+                accounts={accounts}
+                fromAccountId={t.account_id}
+                categoryId={t.category_id}
+                transferAccountId={t.kind === "transfer" ? t.counter_account_id : null}
                 disabled={!editable}
-                onChange={(id) => setCategory(t, id)}
+                onChange={(choice) => setCategory(t, choice)}
               />
             ) : (
-              <span className="muted small">{t.kind === "transfer" ? "โอนระหว่างบัญชี" : "ดูรายการย่อย"}</span>
+              <span className="muted small">ดูรายการย่อย</span>
+            )}
+            {isLeaf && t.merchant_key && (
+              <label className="remember small muted" title="ผู้รับที่แต่ละครั้งเป็นคนละเรื่อง เช่น โอนให้เพื่อน">
+                <input
+                  type="checkbox"
+                  checked={t.memory_action === "ask"}
+                  onChange={(e) => setRemember(t, !e.target.checked)}
+                />{" "}
+                ไม่ต้องจำผู้รับนี้
+              </label>
             )}
           </td>
-          <td className="c-src">{isLeaf && t.kind === "expense" && <SourceBadge t={t} uncategorizedId={uncategorizedId} />}</td>
+          <td className="c-src">
+            {isLeaf && (t.kind === "expense" || t.kind === "transfer") && (
+              <SourceBadge t={t} uncategorizedId={uncategorizedId} />
+            )}
+            {t.memory_action === "ask" && <span className="badge badge-none">ไม่จำ</span>}
+          </td>
           <td className="c-act nowrap">
             {depth === 0 && t.status !== "confirmed" && (
               <button className="link" onClick={() => ignore(t)}>

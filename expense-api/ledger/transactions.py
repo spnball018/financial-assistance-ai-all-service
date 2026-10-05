@@ -11,7 +11,9 @@ from categorize.normalize import normalize_merchant
 
 COLUMNS = """t.id, t.parent_id, t.account_id, t.counter_account_id, t.node_type, t.kind, t.status, t.needs_review,
   t.amount, t.currency, t.occurred_at, t.has_time, t.source, t.merchant_raw, t.merchant_key, t.description,
-  t.category_id, t.category_source, t.ai_confidence, t.ai_reason, t.confirmed_at, t.raw->>'channel' AS channel"""
+  t.category_id, t.category_source, t.ai_confidence, t.ai_reason, t.confirmed_at, t.raw->>'channel' AS channel,
+  t.raw->>'to_account' AS to_account,
+  (SELECT m.action FROM ledger.merchant_memory m WHERE m.merchant_key = t.merchant_key) AS memory_action"""
 
 
 class NotFound(Exception):
@@ -84,10 +86,22 @@ def get_one(conn, txn_id: int) -> dict:
     return dict(row._mapping)
 
 
-def update(conn, txn_id: int, *, category_id: Optional[int] = None, description: Optional[str] = None,
-           status: Optional[str] = None, fields: set[str]) -> dict:
-    """Partial update; `fields` lists what the client actually sent (so description can be cleared)."""
+def _is_leaf(conn, txn_id: int) -> bool:
+    return not conn.execute(text("SELECT EXISTS (SELECT 1 FROM ledger.transactions WHERE parent_id = :id)"),
+                            {"id": txn_id}).scalar()
+
+
+def update(conn, txn_id: int, *, category_id: Optional[int] = None, transfer_account_id: Optional[int] = None,
+           description: Optional[str] = None, status: Optional[str] = None, remember: Optional[bool] = None,
+           fields: set[str]) -> dict:
+    """Partial update; `fields` lists what the client actually sent (so description can be cleared).
+
+    category_id         -> an expense in that category (turns a transfer back into an expense)
+    transfer_account_id -> a transfer to one of the user's accounts (not an expense, no category)
+    remember=False      -> never remember this payee (rule 'ask'); True lifts that"""
     current = get_one(conn, txn_id)
+    if "category_id" in fields and "transfer_account_id" in fields:
+        raise Invalid("send either category_id or transfer_account_id, not both")
     if "status" in fields:
         if status not in ("pending", "ignored"):
             raise Invalid("status can only be set to pending or ignored here; use POST /transactions/confirm")
@@ -99,15 +113,41 @@ def update(conn, txn_id: int, *, category_id: Optional[int] = None, description:
               UNION ALL SELECT c.id FROM ledger.transactions c JOIN tree ON c.parent_id = tree.id)
             UPDATE ledger.transactions SET status = :s, updated_at = now() WHERE id IN (SELECT id FROM tree)"""),
             {"id": txn_id, "s": status})
+    if ("category_id" in fields or "transfer_account_id" in fields) and current["kind"] not in ("expense", "transfer"):
+        raise Invalid(f"a {current['kind']} transaction cannot be re-categorized")
+    if ("category_id" in fields or "transfer_account_id" in fields) and not _is_leaf(conn, txn_id):
+        raise Invalid("only leaf transactions get a category or become transfers; edit the items under it")
+    asks = memory.is_ask(conn, current["merchant_key"])
     if "category_id" in fields:
         if category_id is None:
             raise Invalid("category_id cannot be null")
         check_category(conn, category_id)
-        conn.execute(text("UPDATE ledger.transactions SET category_id = :c, category_source = 'user', "
-                          "updated_at = now() WHERE id = :id"), {"c": category_id, "id": txn_id})
-        # editing an already-confirmed row is also a confirmation of the merchant's category (T3.4)
-        if current["status"] == "confirmed" and current["merchant_key"]:
+        conn.execute(text("UPDATE ledger.transactions SET kind = 'expense', counter_account_id = NULL, "
+                          "category_id = :c, category_source = 'user', updated_at = now() WHERE id = :id"),
+                     {"c": category_id, "id": txn_id})
+        # editing an already-confirmed row is also a confirmation of the payee's rule (T3.4)
+        if current["status"] == "confirmed" and current["merchant_key"] and not asks:
             memory.remember(conn, current["merchant_key"], category_id)
+    if "transfer_account_id" in fields:
+        if transfer_account_id is None:
+            raise Invalid("transfer_account_id cannot be null")
+        if transfer_account_id == current["account_id"]:
+            raise Invalid("a transfer must go to a different account")
+        if not conn.execute(text("SELECT EXISTS (SELECT 1 FROM ledger.accounts WHERE id = :a)"),
+                            {"a": transfer_account_id}).scalar():
+            raise Invalid(f"account {transfer_account_id} does not exist")
+        conn.execute(text("UPDATE ledger.transactions SET kind = 'transfer', counter_account_id = :a, "
+                          "category_id = NULL, category_source = 'user', ai_confidence = NULL, ai_reason = NULL, "
+                          "updated_at = now() WHERE id = :id"), {"a": transfer_account_id, "id": txn_id})
+        if current["status"] == "confirmed" and current["merchant_key"] and not asks:
+            memory.remember(conn, current["merchant_key"], action="transfer", counter_account_id=transfer_account_id,
+                            to_account=current["to_account"])
+    if "remember" in fields:
+        if remember is None:
+            raise Invalid("remember must be true or false")
+        if not current["merchant_key"]:
+            raise Invalid("this transaction has no payee to remember")
+        memory.set_ask(conn, current["merchant_key"], ask=not remember)
     if "description" in fields:
         conn.execute(text("UPDATE ledger.transactions SET description = :d, updated_at = now() WHERE id = :id"),
                      {"d": description, "id": txn_id})
@@ -134,14 +174,14 @@ def confirm(conn, ids: Optional[list[int]] = None, all_pending: bool = False) ->
             raise NotFound("some ids do not exist")
         roots = list(found)
     if not roots:
-        return {"confirmed": 0, "remembered": 0, "applied_to_pending": 0}
+        return {"confirmed": 0, "remembered": 0, "remembered_transfers": 0, "applied_to_pending": 0}
 
     tree_ids = conn.execute(text("""
         WITH RECURSIVE tree AS (SELECT id FROM ledger.transactions WHERE id = ANY(:roots) AND status = 'pending'
           UNION ALL SELECT c.id FROM ledger.transactions c JOIN tree ON c.parent_id = tree.id)
         SELECT id FROM tree"""), {"roots": roots}).scalars().all()
     if not tree_ids:
-        return {"confirmed": 0, "remembered": 0, "applied_to_pending": 0}
+        return {"confirmed": 0, "remembered": 0, "remembered_transfers": 0, "applied_to_pending": 0}
     unc = _uncategorized_id(conn)
     conn.execute(text("""
         UPDATE ledger.transactions t SET category_id = :unc, category_source = 'user'
@@ -152,23 +192,49 @@ def confirm(conn, ids: Optional[list[int]] = None, all_pending: bool = False) ->
         "UPDATE ledger.transactions SET status = 'confirmed', confirmed_at = now(), updated_at = now() "
         "WHERE id = ANY(:ids) AND status = 'pending'"), {"ids": tree_ids}).rowcount
 
-    # learn from confirmed leaves; "Uncategorized" teaches nothing
-    learned = conn.execute(text("""
-        SELECT DISTINCT ON (t.merchant_key) t.merchant_key, t.category_id
+    # learn from confirmed leaves (latest per payee/destination wins); "Uncategorized" teaches nothing,
+    # and payees marked "ask" are never learned
+    leaves = conn.execute(text("""
+        SELECT t.merchant_key, t.kind, t.category_id, t.counter_account_id, t.raw->>'to_account' AS to_account
         FROM ledger.transactions t
-        WHERE t.id = ANY(:ids) AND t.kind = 'expense' AND t.merchant_key IS NOT NULL
-          AND t.category_id IS NOT NULL AND t.category_id <> :unc
+        WHERE t.id = ANY(:ids) AND t.merchant_key IS NOT NULL AND t.kind IN ('expense', 'transfer')
           AND NOT EXISTS (SELECT 1 FROM ledger.transactions c WHERE c.parent_id = t.id)
-        ORDER BY t.merchant_key, t.occurred_at DESC"""), {"ids": tree_ids, "unc": unc}).all()
+          AND NOT EXISTS (SELECT 1 FROM ledger.merchant_memory m WHERE m.merchant_key = t.merchant_key AND m.action = 'ask')
+        ORDER BY t.occurred_at"""), {"ids": tree_ids}).all()
+    learned: dict[str, tuple] = {}
+    for r in leaves:
+        if r.kind == "transfer" and r.counter_account_id:
+            learned[memory.rule_key(r.merchant_key, r.to_account)] = ("transfer", r)
+        elif r.kind == "expense" and r.category_id and r.category_id != unc:
+            learned[r.merchant_key] = ("category", r)
     applied = 0
-    for key, cat in learned:
-        memory.remember(conn, key, cat)
-        applied += conn.execute(text(
-            "UPDATE ledger.transactions SET category_id = :c, category_source = 'memory', "
-            "ai_confidence = NULL, ai_reason = NULL, updated_at = now() "
-            "WHERE status = 'pending' AND merchant_key = :k AND category_source IN ('none', 'ai') "
-            "AND (category_id IS DISTINCT FROM :c)"), {"c": cat, "k": key}).rowcount
-    return {"confirmed": confirmed, "remembered": len(learned), "applied_to_pending": applied}
+    n_transfer = 0
+    for key, (action, r) in learned.items():
+        if action == "category":
+            memory.remember(conn, r.merchant_key, r.category_id)
+            applied += conn.execute(text(
+                "UPDATE ledger.transactions SET kind = 'expense', counter_account_id = NULL, category_id = :c, "
+                "category_source = 'memory', ai_confidence = NULL, ai_reason = NULL, updated_at = now() "
+                "WHERE status = 'pending' AND merchant_key = :k AND category_source IN ('none', 'ai') "
+                "AND kind = 'expense' AND (category_id IS DISTINCT FROM :c) "
+                "AND NOT EXISTS (SELECT 1 FROM ledger.transactions c WHERE c.parent_id = ledger.transactions.id)"),
+                {"c": r.category_id, "k": r.merchant_key}).rowcount
+        else:
+            n_transfer += 1
+            memory.remember(conn, r.merchant_key, action="transfer", counter_account_id=r.counter_account_id,
+                            to_account=r.to_account)
+            # same payee and, when known, same destination number
+            d = memory.digits(r.to_account)
+            applied += conn.execute(text(
+                "UPDATE ledger.transactions SET kind = 'transfer', counter_account_id = :a, category_id = NULL, "
+                "category_source = 'memory', ai_confidence = NULL, ai_reason = NULL, updated_at = now() "
+                "WHERE status = 'pending' AND merchant_key = :k AND category_source IN ('none', 'ai') "
+                "AND kind = 'expense' AND account_id <> :a "
+                "AND (:d = '' OR right(regexp_replace(coalesce(raw->>'to_account', ''), '\\D', '', 'g'), 4) = :d) "
+                "AND NOT EXISTS (SELECT 1 FROM ledger.transactions c WHERE c.parent_id = ledger.transactions.id)"),
+                {"a": r.counter_account_id, "k": r.merchant_key, "d": d[-4:] if len(d) >= 4 else ""}).rowcount
+    return {"confirmed": confirmed, "remembered": len(learned), "remembered_transfers": n_transfer,
+            "applied_to_pending": applied}
 
 
 def create_manual(conn, *, account_id: int, amount: Decimal, occurred_at: datetime, category_id: int,
@@ -189,6 +255,6 @@ def create_manual(conn, *, account_id: int, amount: Decimal, occurred_at: dateti
         RETURNING id"""), {"a": account_id, "amt": amount, "at": occurred_at, "ht": has_time,
                            "dk": f"manual:{uuid.uuid4()}", "m": merchant, "k": key, "d": description,
                            "c": category_id}).scalar()
-    if key and category_id != _uncategorized_id(conn):
+    if key and category_id != _uncategorized_id(conn) and not memory.is_ask(conn, key):
         memory.remember(conn, key, category_id)
     return get_one(conn, new_id)

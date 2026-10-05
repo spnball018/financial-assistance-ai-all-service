@@ -80,6 +80,10 @@ tr.child-row td { background: var(--bg); }
 .badge-memory { background: var(--ok-bg); color: var(--ok); }
 .badge-user { background: var(--selected); color: var(--accent); }
 .badge-warn { background: var(--warn-bg); color: var(--warn); }
+.badge-transfer { background: var(--warn-bg); color: var(--warn); }
+.category-select.is-transfer { border-color: var(--warn); }
+.remember { display: block; margin-top: 4px; cursor: pointer; }
+.transfers { margin-top: 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
 .badge-none { background: var(--bg); color: var(--muted); border: 1px solid var(--border); }
 .message { padding: 8px 12px; border-radius: 6px; margin: 8px 0; display: flex; justify-content: space-between; gap: 8px; }
 .message.ok { background: var(--ok-bg); color: var(--ok); }

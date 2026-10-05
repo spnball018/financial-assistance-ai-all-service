@@ -27,5 +27,14 @@ def monthly_summary(conn, month: str) -> dict:
         SELECT count(*) FROM ledger.transactions
         WHERE status = 'pending' AND parent_id IS NULL
           AND to_char(occurred_at AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM') = :m"""), {"m": month}).scalar()
+    # money moved to the user's own accounts: shown so it is visible, never counted as spending
+    transfers = [dict(r._mapping) for r in conn.execute(text("""
+        SELECT a.id AS account_id, a.name, count(*) AS count, sum(t.amount) AS amount
+        FROM ledger.transactions t JOIN ledger.accounts a ON a.id = t.counter_account_id
+        WHERE t.status = 'confirmed' AND t.kind = 'transfer'
+          AND NOT EXISTS (SELECT 1 FROM ledger.transactions c WHERE c.parent_id = t.id)
+          AND to_char(t.occurred_at AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM') = :m
+        GROUP BY a.id, a.name ORDER BY amount DESC"""), {"m": month})]
     return {"month": month, "total": sum((g["amount"] for g in out), 0),
-            "count": sum(g["count"] for g in out), "pending_not_counted": pending, "categories": out}
+            "count": sum(g["count"] for g in out), "pending_not_counted": pending, "categories": out,
+            "transfers_out": transfers}

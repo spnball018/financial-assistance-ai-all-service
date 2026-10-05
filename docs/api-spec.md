@@ -145,9 +145,13 @@ Errors: `404` ไม่มี parser สำหรับ source นี้
 #### ✅ `POST /categorize`
 จัดหมวดรายการที่ `pending`, `kind=expense`, ยังไม่มีหมวด (`category_source='none'`) และเป็น leaf (ไม่มีลูก) ตามลำดับ
 1. ตั้ง `merchant_key` จาก `merchant_raw` (ตัดวงเล็บ, ตัวเลขสาขา/รหัส, เครื่องหมาย, คำนำหน้าชื่อ แล้วทำเป็นตัวพิมพ์เล็ก)
-2. **Merchant Memory**: ถ้า `merchant_key` ตรงกับที่ผู้ใช้เคย confirm จะได้ `category_source='memory'`
-3. **AI** (Gemini): ส่งทีละไม่เกิน 25 รายการ ถ้า confidence ≥ `AI_CONFIDENCE_THRESHOLD` (ค่าเริ่มต้น 0.7) และเป็นหมวด leaf ที่มีอยู่จริง จะได้หมวดนั้น ไม่งั้นได้ "Uncategorized" ทั้งสองกรณีเป็น `category_source='ai'` และเก็บ `ai_confidence`, `ai_reason`
-4. ถ้าไม่ได้ตั้ง AI ไว้ หรือ AI ล้ม รายการจะคงเป็น `none` และถูกลองใหม่ในการเรียกครั้งถัดไป
+2. **โอนเข้าบัญชีตัวเอง (ตรงเลขบัญชี)**: ถ้าเลขปลายทางในอีเมล (`to_account`) ลงท้ายด้วย `masked_ref` ของบัญชีผู้ใช้ **บัญชีเดียว** รายการจะเป็น `kind=transfer` ไปบัญชีนั้น (`category_source='account'`) ถ้าตรงหลายบัญชีจะไม่เดา
+3. **กฎต่อผู้รับ (Merchant Memory)**: ค้นจาก `ผู้รับ|เลขท้าย 4 ตัวของปลายทาง` ก่อน แล้วค่อยค้นจากผู้รับอย่างเดียว ได้ผลเป็น
+   - `category` → หมวดนั้น (`category_source='memory'`)
+   - `transfer` → โอนเข้าบัญชีที่จำไว้ (`category_source='memory'`)
+   - `ask` (ไม่ต้องจำ) → ข้ามไปให้ AI เสนอ
+4. **AI** (Gemini): ส่งทีละไม่เกิน 25 รายการ (เฉพาะรายการรายจ่าย ไม่ส่ง transfer) ถ้า confidence ≥ `AI_CONFIDENCE_THRESHOLD` (ค่าเริ่มต้น 0.7) และเป็นหมวด leaf ที่มีอยู่จริง จะได้หมวดนั้น ไม่งั้นได้ "Uncategorized" ทั้งสองกรณีเป็น `category_source='ai'` และเก็บ `ai_confidence`, `ai_reason`
+5. ถ้าไม่ได้ตั้ง AI ไว้ หรือ AI ล้ม รายการจะคงเป็น `none` และถูกลองใหม่ในการเรียกครั้งถัดไป
 
 **เลือก AI adapter ด้วย env `CATEGORIZER`** (ตั้งใน `expense-api/.env`)
 
@@ -162,10 +166,11 @@ Errors: `404` ไม่มี parser สำหรับ source นี้
 
 Response
 ```json
-{"memory": 12, "ai": 30, "uncategorized": 5, "left": 0}
+{"transfer": 3, "memory": 12, "ai": 30, "uncategorized": 5, "left": 0}
 ```
 | ฟิลด์ | ความหมาย |
 |---|---|
+| `transfer` | เป็นการโอนเข้าบัญชีตัวเอง (จากเลขบัญชี หรือกฎที่จำไว้) |
 | `memory` | ได้หมวดจาก Merchant Memory |
 | `ai` | AI มั่นใจพอ ได้หมวดที่ AI เลือก |
 | `uncategorized` | AI ไม่มั่นใจ หรือตอบหมวดที่ใช้ไม่ได้ จึงได้ Uncategorized |
@@ -203,12 +208,15 @@ Response `{"is_set": true, "updated_at": "2026-10-05T07:00:00+00:00"}`
     "amount": 269.0, "currency": "THB", "occurred_at": "2026-10-02T17:09:57+00:00", "has_time": true,
     "source": "kbank_email", "channel": "bill_payment",
     "merchant_raw": "MEB CORPORATION .,LTD", "merchant_key": "meb corporation ltd", "description": "bill_payment",
+    "to_account": null, "memory_action": "category",
     "category_id": 21, "category_source": "ai", "ai_confidence": 0.9, "ai_reason": "...",
     "confirmed_at": null, "children": []
   }]
 }
 ```
-- `category_source`: `none` (ยังไม่มีหมวด) · `memory` · `ai` · `user` (ผู้ใช้เลือก) · `manual` (บันทึกเอง)
+- `category_source`: `none` (ยังไม่มีหมวด) · `memory` · `ai` · `user` (ผู้ใช้เลือก) · `manual` (บันทึกเอง) · `account` (เป็น transfer เพราะเลขปลายทางตรงกับบัญชีผู้ใช้)
+- `kind = transfer`: โอนเข้าบัญชีตัวเอง `counter_account_id` คือบัญชีปลายทาง ไม่มีหมวดและไม่นับในรายงานรายจ่าย
+- `to_account`: เลขปลายทางจากอีเมล (มีบางส่วนที่ธนาคารปิดไว้) · `memory_action`: กฎของผู้รับนี้ (`category` / `transfer` / `ask` / `null`)
 - `channel` มาจาก parser เช่น `bill_payment`, `promptpay`, `transfer`, `donation`
 - `needs_review = true` เมื่อผลรวมของลูกไม่เท่ากับแม่
 
@@ -219,8 +227,12 @@ Response `{"is_set": true, "updated_at": "2026-10-05T07:00:00+00:00"}`
 แก้เฉพาะฟิลด์ที่ส่งมา
 ```json
 {"category_id": 12, "description": "ค่ากาแฟประชุม", "status": "ignored"}
+{"transfer_account_id": 11}
+{"remember": false}
 ```
 - `category_id`: ต้องเป็นหมวด leaf ของรายจ่าย (เลือกหมวดหลักที่มีหมวดย่อยไม่ได้) ตั้งแล้ว `category_source` จะเป็น `user` และจะไม่ถูก AI หรือ memory ทับ ถ้ารายการ confirm แล้ว การแก้หมวดจะบันทึก Merchant Memory ทันที
+- `transfer_account_id`: เปลี่ยนเป็น**โอนเข้าบัญชีตัวเอง** (`kind=transfer`, ลบหมวด) ต้องเป็นบัญชีอื่นที่มีอยู่จริง ส่งคู่กับ `category_id` ไม่ได้ และการส่ง `category_id` จะเปลี่ยนรายการ transfer กลับเป็นรายจ่าย ทั้งสองฟิลด์ใช้ได้เฉพาะรายการ leaf
+- `remember`: `false` = **ไม่ต้องจำผู้รับนี้** (ลบกฎที่เคยจำของผู้รับนี้ และตั้งกฎ `ask` ให้มีผลทันทีกับทุกรายการของผู้รับนี้) · `true` = ยกเลิก
 - `status`: ตั้งได้แค่ `ignored` หรือ `pending` และมีผลกับทั้งต้นไม้ รายการที่ confirm แล้วเปลี่ยนสถานะกลับไม่ได้ ส่วนการ confirm ให้ใช้ endpoint ด้านล่าง
 
 Errors: `404` · `422` หมวดใช้ไม่ได้ หรือเปลี่ยนสถานะไม่ได้
@@ -232,11 +244,14 @@ Errors: `404` · `422` หมวดใช้ไม่ได้ หรือเ�
 หรือ `{"all": true}` เพื่อ confirm ทุกรายการ pending
 - confirm **ทั้งต้นไม้** ถ้าส่ง id ของลูกมา จะ confirm ทั้งต้นไม้ของ root นั้น
 - รายการรายจ่าย leaf ที่ยังไม่มีหมวดจะได้ "Uncategorized"
-- **Merchant Memory**: ทุก leaf ที่ confirm และมีหมวด (ยกเว้น Uncategorized) จะถูกจำไว้ และหมวดนั้นถูกใช้กับรายการ pending อื่นของร้านเดียวกันทันที เฉพาะรายการที่ `category_source` เป็น `none` หรือ `ai` (ไม่ทับที่ผู้ใช้เลือกเอง)
+- **Merchant Memory**: ทุก leaf ที่ confirm จะถูกจำเป็นกฎ แล้วใช้กับรายการ pending อื่นของผู้รับเดียวกันทันที เฉพาะรายการที่ `category_source` เป็น `none` หรือ `ai` (ไม่ทับที่ผู้ใช้เลือกเอง)
+  - รายจ่ายที่มีหมวด (ยกเว้น Uncategorized) → กฎ `category` ต่อผู้รับ
+  - transfer → กฎ `transfer` ต่อ **ผู้รับ + เลขท้าย 4 ตัวของปลายทาง** (เพราะชื่อผู้ใช้เองเป็นผู้รับในหลายบัญชี) และใช้กับรายการ pending ที่ปลายทางตรงกันเท่านั้น
+  - ผู้รับที่ตั้งว่าไม่ต้องจำ (`ask`) จะไม่ถูกจำ
 - ทุกขั้นตอนอยู่ใน DB transaction เดียว
 
 ```json
-{"confirmed": 2, "remembered": 1, "applied_to_pending": 3}
+{"confirmed": 2, "remembered": 2, "remembered_transfers": 1, "applied_to_pending": 3}
 ```
 Errors: `404` มี id ที่ไม่มีอยู่ (ไม่มีอะไรถูก confirm) · `422` ไม่ได้ส่ง `ids` หรือ `all`
 
@@ -264,6 +279,10 @@ Response `201`: รายการที่สร้าง · `422` ยอดไ
 ```
 - หมวดหลักเรียงตามยอดมากไปน้อย หมวดที่ไม่มีหมวดย่อย (เช่น บริจาค, Uncategorized) จะมี `subcategories` ว่าง
 - `pending_not_counted`: จำนวนรายการ root ที่ยัง pending ในเดือนนั้น (ยังไม่นับในยอด)
+- `transfers_out`: ยอดที่ confirm แล้วว่าโอนเข้าบัญชีตัวเอง แยกตามบัญชีปลายทาง แสดงให้เห็นว่าเงินไปไหน แต่ไม่รวมใน `total`
+  ```json
+  "transfers_out": [{"account_id": 10, "name": "TrueMoney", "count": 2, "amount": 1800.0}]
+  ```
 
 ---
 

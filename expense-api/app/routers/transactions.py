@@ -48,16 +48,21 @@ def get_transaction(txn_id: int):
 
 class TransactionPatch(BaseModel):
     category_id: Optional[int] = None
+    transfer_account_id: Optional[int] = None
     description: Optional[str] = None
     status: Optional[Literal["pending", "ignored"]] = None
+    remember: Optional[bool] = None
 
 
 @router.patch("/transactions/{txn_id}")
 def patch_transaction(txn_id: int, body: TransactionPatch):
-    """Only the fields sent are changed. Setting category_id marks it as the user's choice."""
+    """Only the fields sent are changed. category_id = expense in that category; transfer_account_id =
+    transfer to one of the user's accounts (not counted as an expense); remember=false = never learn
+    a rule for this payee."""
     with get_engine().begin() as conn:
-        return _run(lambda: txns.update(conn, txn_id, category_id=body.category_id, description=body.description,
-                                        status=body.status, fields=body.model_fields_set))
+        return _run(lambda: txns.update(conn, txn_id, category_id=body.category_id,
+                                        transfer_account_id=body.transfer_account_id, description=body.description,
+                                        status=body.status, remember=body.remember, fields=body.model_fields_set))
 
 
 class ConfirmRequest(BaseModel):

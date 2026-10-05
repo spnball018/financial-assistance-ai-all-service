@@ -59,6 +59,21 @@ export function SummaryPage() {
               </li>
             ))}
           </ul>
+          {data.transfers_out.length > 0 && (
+            <div className="transfers">
+              <h2>โอนเข้าบัญชีตัวเอง (ไม่นับเป็นรายจ่าย)</h2>
+              <ul className="subs">
+                {data.transfers_out.map((t) => (
+                  <li key={t.account_id}>
+                    <span>→ {t.name}</span>
+                    <span className="num muted">
+                      {fmtMoney(t.amount)} · {t.count} รายการ
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </>
       )}
     </section>

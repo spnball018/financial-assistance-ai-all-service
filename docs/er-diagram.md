@@ -1,6 +1,6 @@
 # ER diagram: schema `ledger`
 
-สร้างจาก DB จริง (migration 0005, 2026-10-05) ถ้าเพิ่ม migration ให้อัปเดตไฟล์นี้ด้วย ส่วนตาราง `alembic_version` ไม่ได้แสดง
+สร้างจาก DB จริง (migration 0006, 2026-10-05) ถ้าเพิ่ม migration ให้อัปเดตไฟล์นี้ด้วย ส่วนตาราง `alembic_version` ไม่ได้แสดง
 
 ภาพ PNG: [er-diagram.png](er-diagram.png) (render จาก Mermaid ข้างล่าง ใช้ดูใน editor ที่ไม่รองรับ Mermaid ถ้าแก้ diagram ให้ render ใหม่ด้วย `npx @mermaid-js/mermaid-cli -i <ไฟล์ .mmd> -o docs/er-diagram.png -w 2400 -b white`)
 
@@ -50,7 +50,7 @@ erDiagram
         text merchant_key "ใช้ค้น merchant_memory"
         text description
         int category_id FK
-        text category_source "none | memory | ai | user | manual"
+        text category_source "none | memory | ai | user | manual | account"
         numeric ai_confidence
         text ai_reason
         jsonb raw
@@ -62,8 +62,10 @@ erDiagram
 
     merchant_memory {
         int id PK
-        text merchant_key UK
-        int category_id FK
+        text merchant_key UK "ผู้รับ หรือ ผู้รับ|เลขท้ายปลายทาง (กฎ transfer)"
+        text action "category | transfer | ask"
+        int category_id FK "เมื่อ action = category"
+        int counter_account_id FK "เมื่อ action = transfer"
         int hit_count
         timestamptz last_confirmed_at
     }
@@ -150,7 +152,8 @@ erDiagram
     accounts |o--o{ email_sources : "account_id"
     categories |o--o{ categories : "parent_id"
     categories |o--o{ transactions : "category_id"
-    categories ||--o{ merchant_memory : "category_id"
+    categories |o--o{ merchant_memory : "category_id"
+    accounts |o--o{ merchant_memory : "counter_account_id"
     transactions |o--o{ transactions : "parent_id"
     transactions |o--o{ transactions : "ref_transaction_id"
     transactions |o--o{ ecommerce_orders : "matched_txn_id"
@@ -167,7 +170,7 @@ erDiagram
 |---|---|---|
 | ข้อมูลหลัก (master) | `accounts`, `categories` | บัญชีของผู้ใช้ และหมวดหมู่ 2 ระดับ |
 | ledger | `transactions` | ทุกรายการ เก็บเป็นต้นไม้ในตารางเดียว |
-| การเรียนรู้ | `merchant_memory` | ร้าน/ผู้รับ → หมวด ที่ผู้ใช้เคยยืนยัน |
+| การเรียนรู้ | `merchant_memory` | กฎต่อผู้รับที่ผู้ใช้เคยยืนยัน: หมวด / โอนเข้าบัญชีตัวเอง / ไม่ต้องจำ |
 | ข้อมูลดิบ | `email_sources`, `raw_emails`, `raw_attachments`, `sync_runs` | label ต่อแหล่ง อีเมล/ไฟล์ต้นฉบับ และประวัติ sync |
 | รอจับคู่ | `ecommerce_orders`, `ecommerce_order_items` | order ของ Shopee/Lazada ก่อนผูกกับรายการจ่าย (ยังไม่ได้ใช้ รอ T1.3) |
 | ความลับ | `settings` | ค่าที่เข้ารหัส เช่น รหัส PDF ของ KTC |
@@ -185,6 +188,5 @@ erDiagram
 
 ## จะเปลี่ยนใน Phase 6 (ยังไม่มีใน DB)
 
-- **T6.2** `merchant_memory`: เพิ่ม `action` (`category | transfer | ask`) และ `counter_account_id` → `accounts`
 - **T6.4** `transactions`: `node_type = opening_balance` และ `kind = opening` สำหรับยอดเริ่มต้น และ view `v_postings` แปลงแต่ละรายการเป็น 2 ขา (เดบิต/เครดิต) ใช้คำนวณยอดคงเหลือ
 - **T6.5** ตารางเก็บรูปใบเสร็จ และ `node_type = receipt_item` สำหรับรายการย่อยจากใบเสร็จ

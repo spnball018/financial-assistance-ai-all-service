@@ -1,10 +1,12 @@
 export type Status = "pending" | "confirmed" | "ignored";
-export type CategorySource = "none" | "memory" | "ai" | "user" | "manual";
+export type CategorySource = "none" | "memory" | "ai" | "user" | "manual" | "account";
+export type MemoryAction = "category" | "transfer" | "ask";
 
 export interface Txn {
   id: number;
   parent_id: number | null;
   account_id: number;
+  counter_account_id: number | null;
   node_type: string;
   kind: "expense" | "income" | "transfer";
   status: Status;
@@ -17,6 +19,8 @@ export interface Txn {
   channel: string | null;
   merchant_raw: string | null;
   merchant_key: string | null;
+  to_account: string | null;
+  memory_action: MemoryAction | null;
   description: string | null;
   category_id: number | null;
   category_source: CategorySource;
@@ -66,16 +70,18 @@ export interface Summary {
   count: number;
   pending_not_counted: number;
   categories: SummaryGroup[];
+  transfers_out: { account_id: number; name: string; count: number; amount: number }[];
 }
 
 export interface ConfirmResult {
   confirmed: number;
   remembered: number;
+  remembered_transfers: number;
   applied_to_pending: number;
 }
 
 export interface SyncResult {
   run_id: number;
   counts: Record<string, { fetched: number; new: number; duplicate: number; skipped: number; failed: number; error?: string }>;
-  categorize?: { memory?: number; ai?: number; uncategorized?: number; left?: number; error?: string };
+  categorize?: { transfer?: number; memory?: number; ai?: number; uncategorized?: number; left?: number; error?: string };
 }

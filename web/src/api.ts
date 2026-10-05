@@ -35,7 +35,14 @@ export const api = {
     Object.entries(params).forEach(([k, v]) => v !== undefined && v !== "" && q.set(k, String(v)));
     return call<{ total: number; items: Txn[] }>(`/transactions?${q}`);
   },
-  patch: (id: number, body: Partial<Pick<Txn, "category_id" | "description">> & { status?: "pending" | "ignored" }) =>
+  patch: (
+    id: number,
+    body: Partial<Pick<Txn, "category_id" | "description">> & {
+      transfer_account_id?: number;
+      status?: "pending" | "ignored";
+      remember?: boolean;
+    },
+  ) =>
     call<Txn>(`/transactions/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   confirm: (body: { ids: number[] } | { all: true }) =>
     call<ConfirmResult>("/transactions/confirm", { method: "POST", body: JSON.stringify(body) }),
