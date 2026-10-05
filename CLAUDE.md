@@ -43,7 +43,7 @@ docker compose up -d postgres
 (cd expense-api && TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/financial_test .venv/bin/python -m pytest)
 ```
 
-Design docs live in `docs/`: `expense-tracker-plan.md` (plan + status), `sync-engine.md`, `api-spec.md`, `ktc-track.md`.
+Design docs live in `docs/`: `expense-tracker-plan.md` (plan + status), `sync-engine.md`, `api-spec.md`, `er-diagram.md`, `ktc-track.md`.
 
 `credentials.json` must be in the repo root, next to `docker-compose.yml`. It and `token.json` are gitignored. Each FastAPI service serves Swagger at `/docs`, and the healthchecks call that same URL.
 
