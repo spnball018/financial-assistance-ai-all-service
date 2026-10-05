@@ -100,3 +100,24 @@ export interface Balance {
   opening: { amount: number; as_of: string } | null;
   bank_reported: { balance: number; as_of: string; computed: number; difference: number } | null;
 }
+
+export interface EmailSource {
+  id: number;
+  source: "kbank_email" | "ktc_pdf" | "shopee_email" | "lazada_email";
+  gmail_label: string | null;
+  sender_filter: string | null;
+  account_id: number | null;
+  is_active: boolean;
+}
+
+export interface MerchantRule {
+  merchant_key: string;
+  action: MemoryAction;
+  category_id: number | null;
+  category_name: string | null;
+  counter_account_id: number | null;
+  account_name: string | null;
+  hit_count: number;
+  last_confirmed_at: string;
+  transactions: number;
+}

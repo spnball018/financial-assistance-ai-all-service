@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 
 from app.db import get_engine
-from app.routers import accounts, categorize, ktc, sync, transactions
+from app.routers import accounts, categorize, ktc, rules, sync, transactions
 
 app = FastAPI(
     title="Expense API",
@@ -17,6 +17,7 @@ app.include_router(ktc.router)
 app.include_router(sync.router)
 app.include_router(categorize.router)
 app.include_router(transactions.router)
+app.include_router(rules.router)
 
 
 @app.get("/categories")

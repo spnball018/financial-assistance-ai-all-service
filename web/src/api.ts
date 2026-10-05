@@ -1,4 +1,4 @@
-import type { Account, AccountInput, Balance, Category, ConfirmResult, Status, Summary, SyncResult, Txn } from "./types";
+import type { Account, AccountInput, Balance, Category, EmailSource, MerchantRule, ConfirmResult, Status, Summary, SyncResult, Txn } from "./types";
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -32,6 +32,17 @@ export const api = {
     call<{ amount: number; as_of: string }>(`/accounts/${id}/opening-balance`, { method: "PUT", body: JSON.stringify(body) }),
   deleteOpening: (id: number) =>
     fetch(`/api/accounts/${id}/opening-balance`, { method: "DELETE" }).then((r) => {
+      if (!r.ok) throw new ApiError(r.status, r.statusText);
+    }),
+  emailSources: () => call<EmailSource[]>("/email-sources"),
+  updateEmailSource: (s: EmailSource) =>
+    call<EmailSource>(`/email-sources/${s.source}`, {
+      method: "PUT",
+      body: JSON.stringify({ gmail_label: s.gmail_label, sender_filter: s.sender_filter, account_id: s.account_id, is_active: s.is_active }),
+    }),
+  rules: () => call<MerchantRule[]>("/merchant-rules"),
+  deleteRule: (key: string) =>
+    fetch(`/api/merchant-rules?merchant_key=${encodeURIComponent(key)}`, { method: "DELETE" }).then((r) => {
       if (!r.ok) throw new ApiError(r.status, r.statusText);
     }),
   createAccount: (body: AccountInput) => call<Account>("/accounts", { method: "POST", body: JSON.stringify(body) }),

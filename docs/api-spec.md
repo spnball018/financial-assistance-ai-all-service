@@ -200,6 +200,20 @@ Response
 
 ข้อมูลที่ส่งไปให้ Gemini มีแค่ id, ชื่อร้าน/ผู้รับ, ช่องทาง, ยอดเงิน และคำอธิบาย ไม่มีเลขบัญชี
 
+### กฎต่อผู้รับ (Merchant Memory)
+
+#### ✅ `GET /merchant-rules`
+กฎที่ระบบจำไว้ เรียงตามจำนวนครั้งที่ใช้
+```json
+[{"merchant_key": "ptt station", "action": "category", "category_id": 17, "category_name": "ค่าน้ำมัน",
+  "counter_account_id": null, "account_name": null, "hit_count": 2, "last_confirmed_at": "2026-10-05T11:24:00+00:00",
+  "transactions": 8}]
+```
+`merchant_key` ที่มี `|1234` ต่อท้ายคือกฎ transfer ที่จำแยกตามเลขท้ายปลายทาง · `transactions` = จำนวนรายการของผู้รับนี้
+
+#### ✅ `DELETE /merchant-rules?merchant_key=...`
+ลืมกฎ 1 ข้อ (`204`, `404` ถ้าไม่มี) รายการเดิมไม่เปลี่ยน มีผลเฉพาะการจัดหมวดครั้งต่อไป
+
 ### ตั้งค่า KTC
 
 #### 🚧 `PUT /settings/ktc-password` (K3 ใน [ktc-track.md](ktc-track.md))

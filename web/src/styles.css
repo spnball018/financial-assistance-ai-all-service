@@ -114,6 +114,7 @@ table.settings tr.inactive td { opacity: 0.55; }
 table.settings tr.new-row td { background: var(--bg); }
 .error-text { color: var(--error); }
 .manual { max-width: 720px; }
+.settings-section { margin-top: 24px; }
 .form-grid {
   display: grid; grid-template-columns: 1fr 1fr; gap: 12px; background: var(--surface);
   border: 1px solid var(--border); border-radius: 8px; padding: 16px;
