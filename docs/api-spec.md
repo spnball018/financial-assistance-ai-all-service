@@ -15,7 +15,7 @@
 ยังไม่มีระบบ auth ทุก endpoint เปิดให้ใครก็ได้ที่เข้าถึงพอร์ตได้ (Google Auth อยู่ใน backlog)
 
 ข้อตกลงร่วม
-- เงินเป็น decimal ส่งใน JSON เป็น string หรือ number ทศนิยม 2 ตำแหน่ง สกุลเงินเริ่มต้นคือ `THB`
+- เงินเป็น decimal: ใน request ส่งเป็น string (แนะนำ เช่น `"45.50"`) หรือ number ก็ได้ ใน response เป็น number สกุลเงินเริ่มต้นคือ `THB`
 - เวลาเป็น ISO 8601 พร้อม timezone; `occurred_at` ของรายการเป็นเวลา Asia/Bangkok
 - error ใช้รูปแบบของ FastAPI: `{"detail": "..."}` หรือ `{"detail": {"code": "..."}}`
 
