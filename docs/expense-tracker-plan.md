@@ -121,7 +121,7 @@ PRD ต้องการให้ผู้ใช้กด Refresh แล้ว�
   - ดึง order_id, เวลา, ยอดสุทธิ, items, ค่าส่ง, ส่วนลด, coin
   - dedup_key = `shopee:<order_id>`
   - ใช้ LLM เป็น fallback เฉพาะ items เมื่อ template เปลี่ยน
-- **T1.4** `sync/engine.py` + `POST /sync`:
+- **T1.4** `sync/engine.py` + `POST /sync`: รายละเอียดการออกแบบและสถานะอยู่ใน [sync-engine.md](sync-engine.md)
   - parser ของแต่ละแหล่งอยู่ใน `sources/<source>.py` ตาม contract ใน `sources/base.py` (engine เป็นคนเดียวที่เขียน DB)
   - วนตาม `email_sources` ที่ active: query ด้วย `label:<gmail_label>` (+ `from:<sender_filter>`) แล้วบันทึกลง `raw_emails` ก่อน จากนั้นค่อย parse จาก `raw_emails`
   - `POST /sync/reparse?source=` parse ใหม่จาก `raw_emails` ที่มีอยู่ ไม่เรียก Gmail
