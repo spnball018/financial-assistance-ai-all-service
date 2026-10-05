@@ -51,3 +51,4 @@ financial-assistance-ai-gmail-service/token.json
 expense-api/.env
 expense-api/tests/fixtures/*
 !expense-api/tests/fixtures/.gitkeep
+expense-api/.venv/
