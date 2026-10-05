@@ -84,6 +84,7 @@ class ManualTransaction(BaseModel):
     merchant: Optional[str] = None
     description: Optional[str] = None
     has_time: bool = True
+    kind: Literal["expense", "income"] = "expense"
 
 
 @router.post("/transactions", status_code=201)

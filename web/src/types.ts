@@ -71,6 +71,8 @@ export interface Summary {
   pending_not_counted: number;
   categories: SummaryGroup[];
   transfers_out: { account_id: number; name: string; count: number; amount: number }[];
+  income: { total: number; categories: { category_id: number | null; name_th: string | null; count: number; amount: number }[] };
+  net: number;
 }
 
 export interface ConfirmResult {

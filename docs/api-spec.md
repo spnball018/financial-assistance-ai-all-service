@@ -251,7 +251,7 @@ Response `{"is_set": true, "updated_at": "2026-10-05T07:00:00+00:00"}`
 {"transfer_account_id": 11}
 {"remember": false}
 ```
-- `category_id`: ต้องเป็นหมวด leaf ของรายจ่าย (เลือกหมวดหลักที่มีหมวดย่อยไม่ได้) ตั้งแล้ว `category_source` จะเป็น `user` และจะไม่ถูก AI หรือ memory ทับ ถ้ารายการ confirm แล้ว การแก้หมวดจะบันทึก Merchant Memory ทันที
+- `category_id`: ต้องเป็นหมวด leaf ชนิดเดียวกับรายการ (รายจ่าย/รายรับ) (เลือกหมวดหลักที่มีหมวดย่อยไม่ได้) ตั้งแล้ว `category_source` จะเป็น `user` และจะไม่ถูก AI หรือ memory ทับ ถ้ารายการ confirm แล้ว การแก้หมวดจะบันทึก Merchant Memory ทันที
 - `transfer_account_id`: เปลี่ยนเป็น**โอนเข้าบัญชีตัวเอง** (`kind=transfer`, ลบหมวด) ต้องเป็นบัญชีอื่นที่มีอยู่จริง ส่งคู่กับ `category_id` ไม่ได้ และการส่ง `category_id` จะเปลี่ยนรายการ transfer กลับเป็นรายจ่าย ทั้งสองฟิลด์ใช้ได้เฉพาะรายการ leaf
 - `remember`: `false` = **ไม่ต้องจำผู้รับนี้** (ลบกฎที่เคยจำของผู้รับนี้ และตั้งกฎ `ask` ให้มีผลทันทีกับทุกรายการของผู้รับนี้) · `true` = ยกเลิก
 - `status`: ตั้งได้แค่ `ignored` หรือ `pending` และมีผลกับทั้งต้นไม้ รายการที่ confirm แล้วเปลี่ยนสถานะกลับไม่ได้ ส่วนการ confirm ให้ใช้ endpoint ด้านล่าง
@@ -277,7 +277,7 @@ Errors: `404` · `422` หมวดใช้ไม่ได้ หรือเ�
 Errors: `404` มี id ที่ไม่มีอยู่ (ไม่มีอะไรถูก confirm) · `422` ไม่ได้ส่ง `ids` หรือ `all`
 
 #### ✅ `POST /transactions`
-บันทึกรายจ่ายเอง เช่น เงินสด ได้สถานะ `confirmed` ทันที (`node_type=manual`, `source=manual`)
+บันทึกรายจ่ายหรือรายรับเอง (เช่น เงินสด, TrueMoney, ค่าเช่าที่ได้รับ) ได้สถานะ `confirmed` ทันที (`node_type=manual`, `source=manual`) `kind` = `expense` (ค่าเริ่มต้น) หรือ `income` หมวดต้องเป็นชนิดเดียวกับ `kind` และรายรับจะไม่ถูกจำใน Merchant Memory
 ```json
 {"account_id": 1, "amount": "45.50", "occurred_at": "2026-09-20T12:30:00+07:00", "category_id": 3,
  "merchant": "ร้านข้าวมันไก่", "description": null, "has_time": true}
@@ -300,6 +300,7 @@ Response `201`: รายการที่สร้าง · `422` ยอดไ
 ```
 - หมวดหลักเรียงตามยอดมากไปน้อย หมวดที่ไม่มีหมวดย่อย (เช่น บริจาค, Uncategorized) จะมี `subcategories` ว่าง
 - `pending_not_counted`: จำนวนรายการ root ที่ยัง pending ในเดือนนั้น (ยังไม่นับในยอด)
+- `income`: รายรับที่ confirm แล้ว แยกตามหมวด (`{"total": 8000.0, "categories": [{"category_id": 31, "name_th": "ค่าเช่า", "name_en": "Rental Income", "count": 1, "amount": 8000.0}]}`) และ `net` = รายรับ − รายจ่าย
 - `transfers_out`: ยอดที่ confirm แล้วว่าโอนเข้าบัญชีตัวเอง แยกตามบัญชีปลายทาง แสดงให้เห็นว่าเงินไปไหน แต่ไม่รวมใน `total`
   ```json
   "transfers_out": [{"account_id": 10, "name": "TrueMoney", "count": 2, "amount": 1800.0}]

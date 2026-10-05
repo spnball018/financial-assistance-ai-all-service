@@ -141,3 +141,23 @@ def test_summary_counts_only_confirmed_leaf_expenses(api, db):
     assert Decimal(str(food["amount"])) == Decimal("450") and food["subcategories"][0]["count"] == 3
     aug = api.get("/reports/summary", params={"month": "2026-08"}).json()
     assert aug["count"] == 1 and Decimal(str(aug["total"])) == Decimal("20")
+
+
+def test_manual_income_and_monthly_net(api, db):
+    rent = cat(db, "Rental Income")
+    body = {"account_id": 1, "amount": "8000", "occurred_at": "2026-09-01T10:00:00+07:00",
+            "category_id": rent, "merchant": "ผู้เช่า", "kind": "income"}
+    r = api.post("/transactions", json=body)
+    assert r.status_code == 201 and r.json()["kind"] == "income"
+    assert q(db, "SELECT count(*) FROM ledger.merchant_memory") == 0  # payers are not learned
+    # an expense category on income (and vice versa) is rejected
+    assert api.post("/transactions", json={**body, "category_id": cat(db, "Fuel")}).status_code == 422
+    assert api.post("/transactions", json={**body, "kind": "expense"}).status_code == 422
+    add(db, "e", "SHOP", "1200", cat_id=cat(db, "Fuel"), status="confirmed")
+    s = api.get("/reports/summary", params={"month": "2026-09"}).json()
+    assert Decimal(str(s["income"]["total"])) == Decimal("8000") and s["income"]["categories"][0]["name_en"] == "Rental Income"
+    assert Decimal(str(s["net"])) == Decimal("6800")
+    # re-categorizing an income keeps it income; it cannot become a transfer out
+    t = r.json()["id"]
+    assert api.patch(f"/transactions/{t}", json={"category_id": cat(db, "Freelance")}).json()["kind"] == "income"
+    assert api.patch(f"/transactions/{t}", json={"transfer_account_id": 3}).status_code == 422

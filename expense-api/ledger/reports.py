@@ -35,6 +35,16 @@ def monthly_summary(conn, month: str) -> dict:
           AND NOT EXISTS (SELECT 1 FROM ledger.transactions c WHERE c.parent_id = t.id)
           AND to_char(t.occurred_at AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM') = :m
         GROUP BY a.id, a.name ORDER BY amount DESC"""), {"m": month})]
-    return {"month": month, "total": sum((g["amount"] for g in out), 0),
+    income = [dict(r._mapping) for r in conn.execute(text("""
+        SELECT k.id AS category_id, k.name_th, k.name_en, count(*) AS count, sum(t.amount) AS amount
+        FROM ledger.transactions t LEFT JOIN ledger.categories k ON k.id = t.category_id
+        WHERE t.status = 'confirmed' AND t.kind = 'income'
+          AND NOT EXISTS (SELECT 1 FROM ledger.transactions c WHERE c.parent_id = t.id)
+          AND to_char(t.occurred_at AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM') = :m
+        GROUP BY k.id, k.name_th, k.name_en ORDER BY amount DESC"""), {"m": month})]
+    total = sum((g["amount"] for g in out), 0)
+    income_total = sum((i["amount"] for i in income), 0)
+    return {"month": month, "total": total,
             "count": sum(g["count"] for g in out), "pending_not_counted": pending, "categories": out,
-            "transfers_out": transfers}
+            "transfers_out": transfers,
+            "income": {"total": income_total, "categories": income}, "net": income_total - total}

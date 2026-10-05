@@ -25,12 +25,25 @@ export function SummaryPage() {
       {error && <div className="message error">{error}</div>}
       {data && (
         <>
-          <div className="total-card">
-            <div className="muted small">รายจ่ายที่ยืนยันแล้ว</div>
-            <div className="total">{fmtMoney(data.total)}</div>
-            <div className="muted small">
-              {data.count} รายการ
-              {data.pending_not_counted > 0 && ` · ยังรอตรวจอีก ${data.pending_not_counted} รายการ (ยังไม่นับ)`}
+          <div className="cards">
+            <div className="total-card">
+              <div className="muted small">รายจ่ายที่ยืนยันแล้ว</div>
+              <div className="total">{fmtMoney(data.total)}</div>
+              <div className="muted small">
+                {data.count} รายการ
+                {data.pending_not_counted > 0 && ` · ยังรอตรวจอีก ${data.pending_not_counted} รายการ (ยังไม่นับ)`}
+              </div>
+            </div>
+            <div className="total-card">
+              <div className="muted small">รายรับ</div>
+              <div className="total">{fmtMoney(data.income.total)}</div>
+              <div className="muted small">
+                {data.income.categories.map((c) => `${c.name_th ?? "ไม่ระบุ"} ${fmtMoney(c.amount)}`).join(" · ") || "ยังไม่มี"}
+              </div>
+            </div>
+            <div className="total-card">
+              <div className="muted small">คงเหลือสุทธิ (รายรับ − รายจ่าย)</div>
+              <div className={`total ${data.net < 0 ? "neg" : ""}`}>{fmtMoney(data.net)}</div>
             </div>
           </div>
           {data.categories.length === 0 && <p className="muted">ยังไม่มีรายการที่ยืนยันในเดือนนี้</p>}

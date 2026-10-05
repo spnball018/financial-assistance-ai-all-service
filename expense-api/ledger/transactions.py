@@ -29,13 +29,15 @@ def _uncategorized_id(conn) -> int:
                              "AND name_en = 'Uncategorized'")).scalar_one()
 
 
-def check_category(conn, category_id: int) -> None:
-    """Only leaf expense categories can be assigned (a parent like 'Food & Dining' is too vague)."""
+def check_category(conn, category_id: int, kind: str = "expense") -> None:
+    """Only leaf categories of the matching kind can be assigned (a parent like 'Food & Dining' is too
+    vague, and an income category on a payment would be wrong)."""
     ok = conn.execute(text(
-        "SELECT EXISTS (SELECT 1 FROM ledger.categories c WHERE c.id = :id AND c.kind = 'expense' "
-        "AND NOT EXISTS (SELECT 1 FROM ledger.categories k WHERE k.parent_id = c.id))"), {"id": category_id}).scalar()
+        "SELECT EXISTS (SELECT 1 FROM ledger.categories c WHERE c.id = :id AND c.kind = :kind "
+        "AND NOT EXISTS (SELECT 1 FROM ledger.categories k WHERE k.parent_id = c.id))"),
+        {"id": category_id, "kind": kind}).scalar()
     if not ok:
-        raise Invalid(f"category {category_id} is not a leaf expense category")
+        raise Invalid(f"category {category_id} is not a leaf {kind} category")
 
 
 def list_trees(conn, *, status: Optional[str] = None, account_id: Optional[int] = None,
@@ -113,18 +115,21 @@ def update(conn, txn_id: int, *, category_id: Optional[int] = None, transfer_acc
               UNION ALL SELECT c.id FROM ledger.transactions c JOIN tree ON c.parent_id = tree.id)
             UPDATE ledger.transactions SET status = :s, updated_at = now() WHERE id IN (SELECT id FROM tree)"""),
             {"id": txn_id, "s": status})
-    if ("category_id" in fields or "transfer_account_id" in fields) and current["kind"] not in ("expense", "transfer"):
+    if ("category_id" in fields or "transfer_account_id" in fields) and current["kind"] not in ("expense", "transfer", "income"):
         raise Invalid(f"a {current['kind']} transaction cannot be re-categorized")
+    if "transfer_account_id" in fields and current["kind"] == "income":
+        raise Invalid("an income cannot become a transfer out; record the transfer on the sending account")
     if ("category_id" in fields or "transfer_account_id" in fields) and not _is_leaf(conn, txn_id):
         raise Invalid("only leaf transactions get a category or become transfers; edit the items under it")
     asks = memory.is_ask(conn, current["merchant_key"])
     if "category_id" in fields:
         if category_id is None:
             raise Invalid("category_id cannot be null")
-        check_category(conn, category_id)
-        conn.execute(text("UPDATE ledger.transactions SET kind = 'expense', counter_account_id = NULL, "
+        new_kind = "income" if current["kind"] == "income" else "expense"
+        check_category(conn, category_id, new_kind)
+        conn.execute(text("UPDATE ledger.transactions SET kind = :k, counter_account_id = NULL, "
                           "category_id = :c, category_source = 'user', updated_at = now() WHERE id = :id"),
-                     {"c": category_id, "id": txn_id})
+                     {"c": category_id, "id": txn_id, "k": new_kind})
         # editing an already-confirmed row is also a confirmation of the payee's rule (T3.4)
         if current["status"] == "confirmed" and current["merchant_key"] and not asks:
             memory.remember(conn, current["merchant_key"], category_id)
@@ -238,23 +243,27 @@ def confirm(conn, ids: Optional[list[int]] = None, all_pending: bool = False) ->
 
 
 def create_manual(conn, *, account_id: int, amount: Decimal, occurred_at: datetime, category_id: int,
-                  merchant: Optional[str] = None, description: Optional[str] = None, has_time: bool = True) -> dict:
-    """Cash or anything without an email: confirmed immediately."""
+                  merchant: Optional[str] = None, description: Optional[str] = None, has_time: bool = True,
+                  kind: str = "expense") -> dict:
+    """Cash, TrueMoney, income... anything without an email: confirmed immediately."""
+    if kind not in ("expense", "income"):
+        raise Invalid("kind must be expense or income")
     if amount <= 0:
         raise Invalid("amount must be positive")
     if occurred_at.tzinfo is None:
         raise Invalid("occurred_at needs a timezone, e.g. 2026-10-05T12:30:00+07:00")
     if not conn.execute(text("SELECT EXISTS (SELECT 1 FROM ledger.accounts WHERE id = :a)"), {"a": account_id}).scalar():
         raise Invalid(f"account {account_id} does not exist")
-    check_category(conn, category_id)
+    check_category(conn, category_id, kind)
     key = normalize_merchant(merchant)
     new_id = conn.execute(text("""
         INSERT INTO ledger.transactions (account_id, node_type, kind, status, amount, occurred_at, has_time,
           source, dedup_key, merchant_raw, merchant_key, description, category_id, category_source, confirmed_at)
-        VALUES (:a, 'manual', 'expense', 'confirmed', :amt, :at, :ht, 'manual', :dk, :m, :k, :d, :c, 'manual', now())
+        VALUES (:a, 'manual', :kind, 'confirmed', :amt, :at, :ht, 'manual', :dk, :m, :k, :d, :c, 'manual', now())
         RETURNING id"""), {"a": account_id, "amt": amount, "at": occurred_at, "ht": has_time,
                            "dk": f"manual:{uuid.uuid4()}", "m": merchant, "k": key, "d": description,
-                           "c": category_id}).scalar()
-    if key and category_id != _uncategorized_id(conn) and not memory.is_ask(conn, key):
+                           "c": category_id, "kind": kind}).scalar()
+    # income payers are not learned: Merchant Memory only categorizes expenses
+    if kind == "expense" and key and category_id != _uncategorized_id(conn) and not memory.is_ask(conn, key):
         memory.remember(conn, key, category_id)
     return get_one(conn, new_id)
