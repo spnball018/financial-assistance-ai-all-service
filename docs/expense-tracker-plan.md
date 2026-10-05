@@ -78,7 +78,8 @@ PRD ต้องการให้ผู้ใช้กด Refresh แล้ว�
 | T1.1 gmail-service | เสร็จและทดสอบแล้ว (ยกเว้น endpoint ไฟล์แนบ) |
 | T1.2 parser KBank | เสร็จ ทดสอบกับอีเมลจริง 419 ฉบับ |
 | API: `/accounts`, `/categories`, `/email-sources` | เขียนแล้ว ยังไม่ได้ทดสอบกับ DB จริง |
-| T0.1 fixture KTC / Shopee / Lazada | ยังไม่มี (รอชื่อ label) |
+| T0.1 fixture Shopee / Lazada | ยังไม่มี (รอชื่อ label) |
+| KTC (T1.5) | แยกไป [ktc-track.md](ktc-track.md) label ที่ผู้ใช้ให้: `financial-ktc-[card]` |
 
 **Spec ที่เปลี่ยนจากแผนเดิม**
 - **gmail-service ไม่มี logic การเงิน**: เป็นแค่ตัวกลางอ่าน Gmail ทั่วไป มี endpoint `GET /api/messages/{id}`, `GET /api/messages/{id}/attachments/{att_id}`, `DELETE /api/messages/{id}` (ย้ายไป Trash เท่านั้น) และ `page_token` ใน `/api/emails`
@@ -121,17 +122,15 @@ PRD ต้องการให้ผู้ใช้กด Refresh แล้ว�
   - dedup_key = `shopee:<order_id>`
   - ใช้ LLM เป็น fallback เฉพาะ items เมื่อ template เปลี่ยน
 - **T1.4** `sync/engine.py` + `POST /sync`:
+  - parser ของแต่ละแหล่งอยู่ใน `sources/<source>.py` ตาม contract ใน `sources/base.py` (engine เป็นคนเดียวที่เขียน DB)
   - วนตาม `email_sources` ที่ active: query ด้วย `label:<gmail_label>` (+ `from:<sender_filter>`) แล้วบันทึกลง `raw_emails` ก่อน จากนั้นค่อย parse จาก `raw_emails`
   - `POST /sync/reparse?source=` parse ใหม่จาก `raw_emails` ที่มีอยู่ ไม่เรียก Gmail
   - เรียก gmail-service ด้วย retry/backoff เพราะดึงจำนวนมากแล้ว Gmail ตอบ 500 เป็นช่วงๆ
   - ครั้งแรกดึงย้อนหลัง 3 เดือน ครั้งถัดไปดึงต่อจาก `sync_runs` ที่สำเร็จล่าสุด (ซ้อนช่วงไว้ 1 วันกันตกหล่น)
   - insert ด้วย `ON CONFLICT (dedup_key) DO NOTHING`
   - คืน counts เป็นจำนวนรายการ ใหม่/ซ้ำ/ข้าม/error
-- **T1.5** KTC:
-  - `PUT /settings/ktc-password` (เก็บแบบเข้ารหัส)
-  - credit-card-statement-service เพิ่ม `POST /parse-ktc-pdf` (file + password, ใช้ pikepdf + pdfplumber) คืนข้อมูล statement และรายการ lines
-  - sync หา PDF ของ KTC ในอีเมล แล้วสร้าง `statement` → `statement_line`
-  - dedup_key = hash(posting date + merchant + amount + approval code)
+- **T1.5** KTC: **แยกเป็น KTC track ให้ agent อีกตัวทำ** ดู [ktc-track.md](ktc-track.md) (ขอบเขตไฟล์, contract, กติกาต้นไม้)
+  - main track ทำแค่ให้ sync engine เรียก `sources/ktc.py` ตาม contract ใน `expense-api/sources/base.py`
 
 **Phase 2: Reconciliation**
 - **T2.1** `reconcile.py`:

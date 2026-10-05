@@ -5,11 +5,14 @@ from pydantic import BaseModel
 from sqlalchemy import text
 
 from app.db import get_engine
+from app.routers import ktc
 
 app = FastAPI(
     title="Expense API",
     description="Sync, reconcile, categorize and manage expense transactions.",
 )
+
+app.include_router(ktc.router)
 
 
 @app.get("/accounts")
