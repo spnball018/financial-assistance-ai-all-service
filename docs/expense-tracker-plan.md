@@ -152,7 +152,7 @@ PRD ต้องการให้ผู้ใช้กด Refresh แล้ว�
 - **T3.3** ถ้า confidence < `AI_CONFIDENCE_THRESHOLD` (เริ่มที่ 0.7) ให้เป็น Uncategorized
 - **T3.4** Feedback loop: เมื่อ confirm หรือแก้หมวด ให้ upsert ลง `merchant_memory` ใน transaction เดียวกับการ confirm
 
-**Phase 4: API + UI**
+**Phase 4: API + UI** (spec ของ API ทุก service อยู่ใน [api-spec.md](api-spec.md))
 - **T4.1** API:
   - `GET /transactions?status=pending` (คืนเป็น tree)
   - `PATCH /transactions/{id}`
