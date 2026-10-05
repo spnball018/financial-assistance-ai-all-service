@@ -1,4 +1,4 @@
-import type { Account, AccountInput, Balance, Category, EmailSource, MerchantRule, ConfirmResult, Status, Summary, SyncResult, Txn } from "./types";
+import type { Account, AccountInput, Balance, Category, EmailSource, MerchantRule, Receipt, ConfirmResult, Status, Summary, SyncResult, Txn } from "./types";
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -62,6 +62,22 @@ export const api = {
     },
   ) =>
     call<Txn>(`/transactions/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  uploadReceipt: async (txnId: number, file: File): Promise<Receipt> => {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch(`/api/transactions/${txnId}/receipts`, { method: "POST", body: form });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new ApiError(res.status, typeof body.detail === "string" ? body.detail : res.statusText);
+    return body as Receipt;
+  },
+  receipts: (txnId: number) => call<Receipt[]>(`/transactions/${txnId}/receipts`),
+  rereadReceipt: (id: number) => call<Receipt>(`/receipts/${id}/read`, { method: "POST" }),
+  applyReceipt: (id: number, items: { name: string; amount: number; category_id: number | null; confidence: number | null }[]) =>
+    call<{ parent_id: number; items: number; adjustment: number }>(`/receipts/${id}/apply`, {
+      method: "POST",
+      body: JSON.stringify({ items }),
+    }),
+  undoReceipt: (txnId: number) => call<{ removed: number }>(`/transactions/${txnId}/receipt-items`, { method: "DELETE" }),
   createTransaction: (body: {
     kind: "expense" | "income";
     account_id: number;

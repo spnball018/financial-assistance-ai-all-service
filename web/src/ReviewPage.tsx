@@ -1,8 +1,9 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError } from "./api";
 import { CategorySelect, type Choice } from "./CategorySelect";
 import { CHANNEL_LABEL, fmtMoney, fmtWhen } from "./format";
-import type { Account, Category, Status, Txn } from "./types";
+import { ReceiptPanel } from "./ReceiptPanel";
+import type { Account, Category, Receipt, Status, Txn } from "./types";
 
 const PAGE = 200;
 
@@ -42,6 +43,10 @@ export function ReviewPage({ categories, accounts }: { categories: Category[]; a
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [message, setMessage] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
+  const [receiptFor, setReceiptFor] = useState<{ txn: Txn; receipt: Receipt } | null>(null);
+  const [uploading, setUploading] = useState<number | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const uploadTarget = useRef<Txn | null>(null);
 
   const uncategorizedId = useMemo(
     () => categories.find((c) => c.parent_id === null && c.name_en === "Uncategorized")?.id,
@@ -137,6 +142,50 @@ export function ReviewPage({ categories, accounts }: { categories: Category[]; a
     }
   };
 
+  const pickReceipt = async (t: Txn) => {
+    // a receipt already read for this payment: open it instead of uploading again
+    if (t.receipts > 0) {
+      try {
+        const list = await api.receipts(t.id);
+        const last = list[list.length - 1];
+        if (last) {
+          setReceiptFor({ txn: t, receipt: last });
+          return;
+        }
+      } catch {
+        /* fall through to upload */
+      }
+    }
+    uploadTarget.current = t;
+    fileInput.current?.click();
+  };
+
+  const onFile = async (file: File | undefined) => {
+    const t = uploadTarget.current;
+    if (!file || !t) return;
+    setUploading(t.id);
+    setMessage(null);
+    try {
+      const receipt = await api.uploadReceipt(t.id, file);
+      setReceiptFor({ txn: t, receipt });
+    } catch (e) {
+      setMessage({ kind: "error", text: `อัปโหลดใบเสร็จไม่สำเร็จ: ${(e as Error).message}` });
+    } finally {
+      setUploading(null);
+      if (fileInput.current) fileInput.current.value = "";
+    }
+  };
+
+  const undoSplit = async (t: Txn) => {
+    if (!window.confirm("ยกเลิกการแยกรายการจากใบเสร็จ? (รูปใบเสร็จยังเก็บไว้)")) return;
+    try {
+      await api.undoReceipt(t.id);
+      await load();
+    } catch (e) {
+      setMessage({ kind: "error", text: (e as Error).message });
+    }
+  };
+
   const toggle = (set: Set<number>, id: number) => {
     const next = new Set(set);
     if (next.has(id)) next.delete(id);
@@ -211,8 +260,37 @@ export function ReviewPage({ categories, accounts }: { categories: Category[]; a
                 {t.status === "ignored" ? "กู้คืน" : "ไม่นับ"}
               </button>
             )}
+            {depth === 0 && t.status === "pending" && t.kind === "expense" && isLeaf && (
+              <button className="link" onClick={() => pickReceipt(t)} disabled={uploading === t.id}>
+                {uploading === t.id ? "กำลังอ่าน…" : t.receipts > 0 ? "ใบเสร็จ" : "แนบใบเสร็จ"}
+              </button>
+            )}
+            {depth === 0 && t.status === "pending" && !isLeaf && t.children.some((c) => c.receipt_id) && (
+              <button className="link" onClick={() => undoSplit(t)}>
+                ยกเลิกการแยก
+              </button>
+            )}
           </td>
         </tr>
+        {receiptFor?.txn.id === t.id && (
+          <tr className="receipt-row">
+            <td colSpan={7}>
+              <ReceiptPanel
+                txn={t}
+                receipt={receiptFor.receipt}
+                categories={categories}
+                onReread={(r) => setReceiptFor({ txn: t, receipt: r })}
+                onCancel={() => setReceiptFor(null)}
+                onDone={async (text) => {
+                  setReceiptFor(null);
+                  setMessage({ kind: "ok", text });
+                  setExpanded((s) => new Set(s).add(t.id));
+                  await load();
+                }}
+              />
+            </td>
+          </tr>
+        )}
         {expanded.has(t.id) && t.children.map((c) => renderRow(c, depth + 1))}
       </Fragment>
     );
@@ -220,6 +298,14 @@ export function ReviewPage({ categories, accounts }: { categories: Category[]; a
 
   return (
     <section>
+      <input
+        ref={fileInput}
+        type="file"
+        accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+        capture="environment"
+        hidden
+        onChange={(e) => onFile(e.target.files?.[0])}
+      />
       <div className="toolbar">
         <div className="tabs" role="tablist">
           {(["pending", "confirmed", "ignored"] as Status[]).map((s) => (

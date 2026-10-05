@@ -115,6 +115,19 @@ table.settings tr.new-row td { background: var(--bg); }
 .error-text { color: var(--error); }
 .manual { max-width: 720px; }
 .settings-section { margin-top: 24px; }
+tr.receipt-row td { background: var(--bg); }
+.receipt-panel { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+.receipt-thumb img { width: 140px; max-height: 240px; object-fit: contain; border: 1px solid var(--border); border-radius: 6px; background: #fff; }
+.receipt-body { flex: 1; min-width: 280px; display: grid; gap: 8px; }
+.receipt-lines { width: 100%; }
+.receipt-lines td { border: none; padding: 2px 4px; }
+.receipt-lines input, .receipt-lines select {
+  font: inherit; width: 100%; padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface); color: var(--text);
+}
+.receipt-lines .amount-input { width: 90px; text-align: right; }
+.receipt-totals { color: var(--muted); }
+.receipt-body .actions { display: flex; gap: 8px; }
 .form-grid {
   display: grid; grid-template-columns: 1fr 1fr; gap: 12px; background: var(--surface);
   border: 1px solid var(--border); border-radius: 8px; padding: 16px;
@@ -160,6 +173,10 @@ table.balances .b-open { min-width: 380px; }
   .c-act { grid-area: act; text-align: right; }
   .category-select { max-width: 100%; width: 100%; }
   td.empty { grid-column: 1 / -1; }
+  tr.receipt-row { display: block !important; }
+  .receipt-lines tr { display: grid; grid-template-columns: 1fr 90px 24px; grid-template-areas: "name amount del" "cat cat cat"; }
+  .receipt-lines td:nth-child(1) { grid-area: name; } .receipt-lines td:nth-child(2) { grid-area: amount; }
+  .receipt-lines td:nth-child(3) { grid-area: cat; } .receipt-lines td:nth-child(4) { grid-area: del; }
   /* settings rows: stack the fields */
   table.settings tbody tr {
     grid-template-columns: 1fr 1fr;

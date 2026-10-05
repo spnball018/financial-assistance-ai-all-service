@@ -1,6 +1,6 @@
 # ER diagram: schema `ledger`
 
-สร้างจาก DB จริง (migration 0007, 2026-10-05) ถ้าเพิ่ม migration ให้อัปเดตไฟล์นี้ด้วย ส่วนตาราง `alembic_version` ไม่ได้แสดง
+สร้างจาก DB จริง (migration 0009, 2026-10-05) ถ้าเพิ่ม migration ให้อัปเดตไฟล์นี้ด้วย ส่วนตาราง `alembic_version` ไม่ได้แสดง
 
 ภาพ PNG: [er-diagram.png](er-diagram.png) (render จาก Mermaid ข้างล่าง ใช้ดูใน editor ที่ไม่รองรับ Mermaid ถ้าแก้ diagram ให้ render ใหม่ด้วย `npx @mermaid-js/mermaid-cli -i <ไฟล์ .mmd> -o docs/er-diagram.png -w 2400 -b white`)
 
@@ -55,6 +55,7 @@ erDiagram
         text ai_reason
         jsonb raw
         bigint raw_email_id FK
+        bigint receipt_id FK "ลูกที่มาจากใบเสร็จ"
         timestamptz confirmed_at
         timestamptz created_at
         timestamptz updated_at
@@ -130,6 +131,21 @@ erDiagram
         numeric amount
     }
 
+    receipts {
+        bigint id PK
+        bigint transaction_id FK "รายการจ่ายที่แนบ"
+        bytea content "รูป (หรือ storage_uri)"
+        text storage_uri
+        text mime_type
+        text sha256 UK
+        timestamptz uploaded_at
+        text ocr_status "pending | done | failed"
+        jsonb ocr_result "รายการที่อ่านได้ + หมวดที่เสนอ"
+        text ocr_model
+        text ocr_error
+        timestamptz applied_at
+    }
+
     sync_runs {
         int id PK
         timestamptz started_at
@@ -161,6 +177,8 @@ erDiagram
     raw_emails |o--o{ ecommerce_orders : "raw_email_id"
     raw_emails ||--o{ raw_attachments : "raw_email_id"
     ecommerce_orders ||--o{ ecommerce_order_items : "order_pk"
+    transactions |o--o{ receipts : "transaction_id"
+    receipts |o--o{ transactions : "receipt_id"
     email_sources ||..o{ raw_emails : "source (ตรรกะ ไม่มี FK)"
 ```
 
@@ -173,6 +191,7 @@ erDiagram
 | การเรียนรู้ | `merchant_memory` | กฎต่อผู้รับที่ผู้ใช้เคยยืนยัน: หมวด / โอนเข้าบัญชีตัวเอง / ไม่ต้องจำ |
 | ข้อมูลดิบ | `email_sources`, `raw_emails`, `raw_attachments`, `sync_runs` | label ต่อแหล่ง อีเมล/ไฟล์ต้นฉบับ และประวัติ sync |
 | รอจับคู่ | `ecommerce_orders`, `ecommerce_order_items` | order ของ Shopee/Lazada ก่อนผูกกับรายการจ่าย (ยังไม่ได้ใช้ รอ T1.3) |
+| ใบเสร็จ | `receipts` | รูปใบเสร็จและผลที่อ่านได้ ลูกที่แยกออกมาชี้กลับด้วย `transactions.receipt_id` |
 | ความลับ | `settings` | ค่าที่เข้ารหัส เช่น รหัส PDF ของ KTC |
 
 ## View
@@ -190,4 +209,3 @@ erDiagram
 
 ## จะเปลี่ยนใน Phase 6 (ยังไม่มีใน DB)
 
-- **T6.5** ตารางเก็บรูปใบเสร็จ และ `node_type = receipt_item` สำหรับรายการย่อยจากใบเสร็จ

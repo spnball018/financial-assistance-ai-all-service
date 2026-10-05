@@ -21,6 +21,8 @@ export interface Txn {
   merchant_key: string | null;
   to_account: string | null;
   memory_action: MemoryAction | null;
+  receipt_id: number | null;
+  receipts: number;
   description: string | null;
   category_id: number | null;
   category_source: CategorySource;
@@ -120,4 +122,24 @@ export interface MerchantRule {
   hit_count: number;
   last_confirmed_at: string;
   transactions: number;
+}
+
+export interface Receipt {
+  id: number;
+  transaction_id: number | null;
+  mime_type: string;
+  uploaded_at: string;
+  ocr_status: "pending" | "done" | "failed";
+  ocr_model: string | null;
+  ocr_error: string | null;
+  applied_at: string | null;
+  ocr_result: {
+    merchant: string;
+    total: number;
+    items: { name: string; quantity: number; amount: number; category_id: number; confidence: number }[];
+    adjustments: { name: string; amount: number }[];
+  } | null;
+  payment_amount: number | null;
+  items_total: number;
+  difference: number | null;
 }

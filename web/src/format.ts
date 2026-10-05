@@ -19,4 +19,10 @@ export const CHANNEL_LABEL: Record<string, string> = {
   promptpay: "พร้อมเพย์",
   transfer: "โอนเงิน",
   donation: "บริจาค",
+  receipt_item: "จากใบเสร็จ",
+  adjustment: "ปรับยอด",
+  order_item: "สินค้าในคำสั่งซื้อ",
+  statement_line: "รายการในบิลบัตร",
+  opening_balance: "ยอดยกมา",
+  manual: "บันทึกเอง",
 };

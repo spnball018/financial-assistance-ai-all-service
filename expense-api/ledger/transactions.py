@@ -12,7 +12,8 @@ from categorize.normalize import normalize_merchant
 COLUMNS = """t.id, t.parent_id, t.account_id, t.counter_account_id, t.node_type, t.kind, t.status, t.needs_review,
   t.amount, t.currency, t.occurred_at, t.has_time, t.source, t.merchant_raw, t.merchant_key, t.description,
   t.category_id, t.category_source, t.ai_confidence, t.ai_reason, t.confirmed_at, t.raw->>'channel' AS channel,
-  t.raw->>'to_account' AS to_account,
+  t.raw->>'to_account' AS to_account, t.receipt_id,
+  (SELECT count(*) FROM ledger.receipts r WHERE r.transaction_id = t.id) AS receipts,
   (SELECT m.action FROM ledger.merchant_memory m WHERE m.merchant_key = t.merchant_key) AS memory_action"""
 
 

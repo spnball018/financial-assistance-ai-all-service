@@ -200,6 +200,36 @@ Response
 
 ข้อมูลที่ส่งไปให้ Gemini มีแค่ id, ชื่อร้าน/ผู้รับ, ช่องทาง, ยอดเงิน และคำอธิบาย ไม่มีเลขบัญชี
 
+### ใบเสร็จ (T6.5)
+
+แนบรูปใบเสร็จกับรายการจ่าย (`pending`, `expense`, ยังไม่มีลูก) → Gemini อ่านรายการสินค้าพร้อมเสนอหมวด → ผู้ใช้แก้แล้วสั่งแยก ระบบสร้างลูก `receipt_item` ทีละรายการ และ `adjustment` 1 บรรทัดถ้ายอดรวมไม่เท่ายอดจ่าย (ส่วนลด, ปัดเศษ, บรรทัดที่อ่านไม่ได้) ทำให้ผลรวมของลูกเท่ากับแม่เสมอ รายงานนับที่ลูก ส่วนยอดบัญชีนับที่แม่ จึงไม่นับซ้ำ รูปเก็บใน Postgres (`ledger.receipts.content`)
+
+#### ✅ `POST /transactions/{id}/receipts`
+multipart `file` (JPEG/PNG/WebP/HEIC, ไม่เกิน 10 MB) บันทึกรูปแล้วอ่านทันที (ราว 4 วินาที)
+```json
+{"id": 1, "transaction_id": 140, "mime_type": "image/jpeg", "ocr_status": "done", "ocr_model": "gemini-3.5-flash-lite",
+ "ocr_result": {"merchant": "...", "total": 339.0,
+   "items": [{"name": "นมสดจืด 1L", "quantity": 2, "amount": 90.0, "category_id": 8, "confidence": 0.95}],
+   "adjustments": [{"name": "ส่วนลดสมาชิก", "amount": -20.0}]},
+ "payment_amount": 339.0, "items_total": 359.0, "difference": -20.0, "applied_at": null}
+```
+Errors: `409` รูปเดิมซ้ำ (เทียบ sha256) · `422` ชนิดไฟล์/ขนาดผิด หรือรายการแยกไม่ได้ · `503` ไม่ได้ตั้ง `GEMINI_API_KEY` (รูปถูกเก็บแล้ว อ่านทีหลังด้วย `/receipts/{id}/read`) ถ้าอ่านไม่สำเร็จ `ocr_status = failed` และ `ocr_error` เป็นชื่อ exception
+
+#### ✅ `GET /transactions/{id}/receipts` · `GET /receipts/{id}` · `GET /receipts/{id}/image` · `POST /receipts/{id}/read`
+ดูรายการใบเสร็จของรายการจ่าย, ดูใบเดียว, ดูรูป และสั่งอ่านใหม่ (`RECEIPT_MODEL` ใช้แทน `GEMINI_MODEL` ได้)
+
+#### ✅ `POST /receipts/{id}/apply`
+```json
+{"items": [{"name": "นมสดจืด 1L", "amount": 90, "category_id": 8, "confidence": 0.95}]}
+```
+ไม่ส่ง `items` = ใช้ตามที่อ่านได้ · `confidence` ส่งเฉพาะบรรทัดที่ผู้ใช้ไม่ได้แก้ (ได้ `category_source = ai`, ไม่งั้น `user`) · หมวดที่ใช้ไม่ได้จะกลายเป็น Uncategorized · `adjustment` ได้หมวดเดียวกับรายการแม่
+```json
+{"parent_id": 140, "items": 4, "adjustment": -20.0}
+```
+
+#### ✅ `DELETE /transactions/{id}/receipt-items`
+ยกเลิกการแยก (ลบลูกที่มาจากใบเสร็จ รูปยังอยู่) ใช้ได้เฉพาะรายการ `pending` → `{"removed": 5}`
+
 ### กฎต่อผู้รับ (Merchant Memory)
 
 #### ✅ `GET /merchant-rules`
@@ -243,7 +273,7 @@ Response `{"is_set": true, "updated_at": "2026-10-05T07:00:00+00:00"}`
     "amount": 269.0, "currency": "THB", "occurred_at": "2026-10-02T17:09:57+00:00", "has_time": true,
     "source": "kbank_email", "channel": "bill_payment",
     "merchant_raw": "MEB CORPORATION .,LTD", "merchant_key": "meb corporation ltd", "description": "bill_payment",
-    "to_account": null, "memory_action": "category",
+    "to_account": null, "memory_action": "category", "receipt_id": null, "receipts": 0,
     "category_id": 21, "category_source": "ai", "ai_confidence": 0.9, "ai_reason": "...",
     "confirmed_at": null, "children": []
   }]
