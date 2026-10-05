@@ -1,6 +1,7 @@
 """AI categorizer port and adapters (Gemini API, Vertex AI), chosen by env CATEGORIZER."""
 import json
 import os
+import time
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Optional, Protocol
@@ -63,18 +64,31 @@ class GeminiClassifier:
     """Gemini through google-genai. The same class serves the Gemini API and Vertex AI;
     only the client differs (see the factories below)."""
 
-    def __init__(self, client, model: Optional[str] = None):
+    def __init__(self, client, model: Optional[str] = None, *, retries: int = 4, backoff: float = 3.0):
         self._client = client
-        self._model = model or os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+        # gemini-2.5-flash returns 404 for new users (checked 2026-10-05); flash-lite is enough to classify
+        self._model = model or os.environ.get("GEMINI_MODEL", "gemini-3.5-flash-lite")
+        self._retries = retries
+        self._backoff = backoff
 
     def classify(self, items, categories):
-        from google.genai import types
+        from google.genai import errors, types
 
-        resp = self._client.models.generate_content(
-            model=self._model, contents=build_prompt(items, categories),
-            config=types.GenerateContentConfig(response_mime_type="application/json",
-                                               response_schema=list[Prediction], temperature=0))
-        return list(resp.parsed or [])
+        config = types.GenerateContentConfig(
+            response_mime_type="application/json", response_schema=list[Prediction], temperature=0,
+            automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True))
+        for attempt in range(self._retries):
+            try:
+                resp = self._client.models.generate_content(
+                    model=self._model, contents=build_prompt(items, categories), config=config)
+                return list(resp.parsed or [])
+            except (errors.ServerError, errors.ClientError) as e:
+                # 503 "high demand" and 429 rate limits are common on the free tier and pass quickly
+                retryable = isinstance(e, errors.ServerError) or getattr(e, "code", None) == 429
+                if not retryable or attempt == self._retries - 1:
+                    raise
+                time.sleep(self._backoff * 2 ** attempt)
+        return []
 
 
 # ── adapter registry ───────────────────────────────────────────────────────

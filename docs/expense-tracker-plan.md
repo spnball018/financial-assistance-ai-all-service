@@ -80,7 +80,7 @@ PRD ต้องการให้ผู้ใช้กด Refresh แล้ว�
 | API: `/accounts`, `/categories`, `/email-sources` | เขียนแล้ว ยังไม่ได้ทดสอบกับ DB จริง |
 | T1.4 sync engine | เสร็จ ทดสอบกับ DB จริงแล้ว (ดู [sync-engine.md](sync-engine.md)) |
 | T3.1 Merchant Memory | เสร็จ (`categorize/normalize.py`, `categorize/memory.py`) |
-| T3.2 AI categorizer | adapter `gemini` / `vertex` / `none` เลือกด้วย env `CATEGORIZER` (registry `ADAPTERS` ใน `categorize/ai.py`) เทสต์ด้วยตัวปลอม **ยังไม่ได้ลองกับของจริง** ตอนนี้ใช้ `none` (memory อย่างเดียว) ไปก่อน |
+| T3.2 AI categorizer | adapter `gemini` / `vertex` / `none` เลือกด้วย env `CATEGORIZER` (registry `ADAPTERS` ใน `categorize/ai.py`) ลองกับ Google AI Studio (free tier) แล้ว: 152 รายการ ได้หมวด 79, Uncategorized 73 ใช้เวลา 27 วินาที |
 | T3.3 threshold → Uncategorized | เสร็จ |
 | T3.4 feedback loop | ฟังก์ชัน `memory.remember()` พร้อมแล้ว รอเรียกจาก confirm ใน T4.1 |
 | T0.1 fixture Shopee / Lazada | ยังไม่มี (รอชื่อ label) |
@@ -146,7 +146,7 @@ PRD ต้องการให้ผู้ใช้กด Refresh แล้ว�
 - **T2.2** ตรวจจับการจ่ายบิล KTC จาก KBank แล้วแปลงเป็น transfer KBank → KTC พร้อมผูกกับ statement
 
 **Phase 3: Categorization**
-- **T3 สรุปการทำจริง**: `POST /categorize` และเรียกอัตโนมัติหลัง `POST /sync` จัดหมวดเฉพาะ leaf ที่ pending ส่วนรุ่น Gemini ตั้งผ่าน env `GEMINI_MODEL` (ค่าเริ่มต้น `gemini-2.5-flash` ยังไม่ได้ยืนยันว่ายังเปิดให้ใช้ ต้องตรวจด้วย `models.list` เมื่อมี key) DB จริงมีร้าน/ผู้รับ 82 รายจาก 152 รายการ
+- **T3 สรุปการทำจริง**: `POST /categorize` และเรียกอัตโนมัติหลัง `POST /sync` จัดหมวดเฉพาะ leaf ที่ pending ส่วนรุ่น Gemini ตั้งผ่าน env `GEMINI_MODEL` ค่าเริ่มต้น `gemini-3.5-flash-lite` (ตรวจ 2026-10-05: `gemini-2.5-flash` ตอบ 404 สำหรับผู้ใช้ใหม่ ส่วน `gemini-3.8-flash` และ `gemini-3.5-flash` ตอบ 503 high demand บน free tier) adapter retry เมื่อเจอ 503/429 DB จริงมีร้าน/ผู้รับ 82 รายจาก 152 รายการ
 - **T3.1** `categorize/memory.py`:
   - `normalize_merchant()` (ตัดเลขสาขา/รหัส/ช่องว่าง, ทำเป็นตัวพิมพ์เล็ก) แล้ว lookup แบบตรงกันพอดี
   - ผู้รับพร้อมเพย์ใช้ชื่อบัญชีเป็น key

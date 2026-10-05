@@ -147,7 +147,7 @@ Errors: `404` ไม่มี parser สำหรับ source นี้
 | `none` | ไม่ใช้ AI (ใช้แค่ Merchant Memory) | |
 | ไม่ตั้ง | `gemini` ถ้ามี `GEMINI_API_KEY` ไม่งั้น `none` | |
 
-ทุก adapter ใช้ prompt เดียวกัน (`build_prompt`) และรุ่นจาก `GEMINI_MODEL` ส่วน `CATEGORIZE_BATCH_SIZE` (ค่าเริ่มต้น 25) คือจำนวนรายการต่อการเรียก 1 ครั้ง ถ้าตั้งค่า adapter ผิด `POST /categorize` จะตอบ `500` พร้อมชื่อ env ที่ขาด ส่วน `POST /sync` ยังทำงานตามปกติ แค่ key `categorize` จะเป็น error
+ทุก adapter ใช้ prompt เดียวกัน (`build_prompt`) และรุ่นจาก `GEMINI_MODEL` (ค่าเริ่มต้น `gemini-3.5-flash-lite`) และ retry เองเมื่อ Gemini ตอบ 503/429 ส่วน `CATEGORIZE_BATCH_SIZE` (ค่าเริ่มต้น 25) คือจำนวนรายการต่อการเรียก 1 ครั้ง ถ้าตั้งค่า adapter ผิด `POST /categorize` จะตอบ `500` พร้อมชื่อ env ที่ขาด ส่วน `POST /sync` ยังทำงานตามปกติ แค่ key `categorize` จะเป็น error
 
 Response
 ```json

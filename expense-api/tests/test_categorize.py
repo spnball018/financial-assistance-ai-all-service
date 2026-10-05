@@ -211,3 +211,50 @@ def test_misconfigured_categorizer_does_not_block_sync_endpoint(monkeypatch):
         assert r2.status_code == 500 and "GOOGLE_CLOUD_PROJECT" in r2.json()["detail"]
     finally:
         app.dependency_overrides.clear()
+
+
+def _client_raising(*excs):
+    """Fake google-genai client that raises the given exceptions in order, then succeeds."""
+    calls = []
+
+    class Resp:
+        parsed = [Prediction(id=1, category_id=5, confidence=0.9, reason="r")]
+
+    class Models:
+        def generate_content(self, model, contents, config):
+            calls.append(1)
+            if len(calls) <= len(excs):
+                raise excs[len(calls) - 1]
+            return Resp()
+
+    class Client:
+        models = Models()
+
+    return Client(), calls
+
+
+def _api_error(cls, code):
+    return cls(code, {"error": {"code": code, "message": "x", "status": "S"}})
+
+
+ITEMS = [Item(id=1, merchant="M", channel="c", amount=Decimal("1"))]
+CATS = [Category(5, "x")]
+
+
+def test_gemini_retries_503_and_429():
+    from google.genai import errors
+    client, calls = _client_raising(_api_error(errors.ServerError, 503), _api_error(errors.ClientError, 429))
+    out = GeminiClassifier(client, model="m", backoff=0).classify(ITEMS, CATS)
+    assert out[0].category_id == 5 and len(calls) == 3
+
+
+def test_gemini_does_not_retry_404_and_gives_up_eventually():
+    from google.genai import errors
+    client, calls = _client_raising(_api_error(errors.ClientError, 404))
+    with pytest.raises(errors.ClientError):
+        GeminiClassifier(client, model="m", backoff=0).classify(ITEMS, CATS)
+    assert len(calls) == 1
+    client, calls = _client_raising(*[_api_error(errors.ServerError, 503)] * 5)
+    with pytest.raises(errors.ServerError):
+        GeminiClassifier(client, model="m", retries=3, backoff=0).classify(ITEMS, CATS)
+    assert len(calls) == 3
