@@ -68,6 +68,32 @@ PRD ต้องการให้ผู้ใช้กด Refresh แล้ว�
 - KTC statement: node `statement` บน KTC account → `statement_line` (kind=expense)
 - ซื้อ Shopee ด้วยบัตร KTC: `statement_line` ที่จับคู่ได้ → `order` → `order_item` + `adjustment`
 
+## สถานะ (อัปเดต 2026-10-05)
+
+| งาน | สถานะ |
+|---|---|
+| T0.2 โครง expense-api | เสร็จ (ยังไม่ได้ยืนยันด้วย docker compose) |
+| T0.3, T0.4 migration 0001, 0002 | เขียนแล้ว ยังไม่ได้รันกับ Postgres จริง |
+| T0.5 migration 0003 (raw_emails, email_sources) | เขียนแล้ว ยังไม่ได้รันกับ Postgres จริง |
+| T1.1 gmail-service | เสร็จและทดสอบแล้ว (ยกเว้น endpoint ไฟล์แนบ) |
+| T1.2 parser KBank | เสร็จ ทดสอบกับอีเมลจริง 419 ฉบับ |
+| API: `/accounts`, `/categories`, `/email-sources` | เขียนแล้ว ยังไม่ได้ทดสอบกับ DB จริง |
+| T0.1 fixture KTC / Shopee / Lazada | ยังไม่มี (รอชื่อ label) |
+
+**Spec ที่เปลี่ยนจากแผนเดิม**
+- **gmail-service ไม่มี logic การเงิน**: เป็นแค่ตัวกลางอ่าน Gmail ทั่วไป มี endpoint `GET /api/messages/{id}`, `GET /api/messages/{id}/attachments/{att_id}`, `DELETE /api/messages/{id}` (ย้ายไป Trash เท่านั้น) และ `page_token` ใน `/api/emails`
+- **OAuth scope**: เปลี่ยนจาก `gmail.readonly` เป็น `gmail.modify` (ต้อง auth ใหม่) ลบถาวรไม่ได้ด้วย scope นี้ ตั้งใจให้เป็นแบบนั้น
+- **Label ต่อแหล่งอยู่ใน `ledger.email_sources`**: KBank = `financial-kasikorn` ส่วน KTC/Shopee/Lazada seed เป็นปิดไว้จนกว่าจะตั้ง label (ตาราง enforce ว่าเปิดได้ต่อเมื่อมี label)
+- **เก็บ raw ทุกอย่างใน DB**: `raw_emails`, `raw_attachments` และ `raw_email_id` บน transactions/orders
+- **Gmail ตอบ 500 เป็นช่วงๆ** เมื่อดึงจำนวนมาก (น่าจะ rate limit) sync ต้อง retry/backoff และดึงทีละหน้าเล็กๆ
+
+**ข้อเท็จจริงจากอีเมล KBank จริง (ใช้เป็น spec ของ parser)**
+- subject ที่พบ: Bill Payment, Funds Transfer, PromptPay Funds Transfer, Donation (สำเร็จ) กับ Bill Payment (Failure) และ Top-up
+- ใช้ส่วนข้อความธรรมดาของอีเมล ไม่มี HTML body; ใช้ label ภาษาอังกฤษอ่านค่า และอ่านชื่อผู้รับจากบล็อกภาษาไทย
+- PromptPay มี 2 แบบ: โอนเข้า wallet (`ชื่อ Wallet`) และโอนผ่านรหัสพร้อมเพย์ (`ชื่อผู้รับเงิน`) แบบหลังเป็นส่วนใหญ่
+- `(Failure)` ข้ามไป ส่วน `Top-up` ยังไม่รองรับ (**ต้องตัดสินใจ**: นับเป็น transfer ไป e-wallet หรือรายจ่าย)
+- บิล KTC จาก KBank คือ Bill Payment ที่บริษัทผู้รับเป็น `KRUNGTHAI CARD PUBLIC COMPANY LIMITED` ใช้ตรวจจับใน T2.2
+
 ## งาน (ทำทีละงาน ตามลำดับ)
 
 **Phase 0: รากฐาน**
