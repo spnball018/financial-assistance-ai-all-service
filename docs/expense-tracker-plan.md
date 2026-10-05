@@ -79,7 +79,7 @@ PRD ต้องการให้ผู้ใช้กด Refresh แล้ว�
 | T1.2 parser KBank | เสร็จ ทดสอบกับอีเมลจริง 419 ฉบับ |
 | API: `/accounts`, `/categories`, `/email-sources` | เขียนแล้ว ยังไม่ได้ทดสอบกับ DB จริง |
 | T0.1 fixture Shopee / Lazada | ยังไม่มี (รอชื่อ label) |
-| KTC (T1.5) | แยกไป [ktc-track.md](ktc-track.md) label ที่ผู้ใช้ให้: `financial-ktc-[card]` |
+| KTC (T1.5) | แยกไป [ktc-track.md](ktc-track.md) label: `financial-ktc-[card]` (ชื่อจริง) |
 
 **Spec ที่เปลี่ยนจากแผนเดิม**
 - **gmail-service ไม่มี logic การเงิน**: เป็นแค่ตัวกลางอ่าน Gmail ทั่วไป มี endpoint `GET /api/messages/{id}`, `GET /api/messages/{id}/attachments/{att_id}`, `DELETE /api/messages/{id}` (ย้ายไป Trash เท่านั้น) และ `page_token` ใน `/api/emails`

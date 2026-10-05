@@ -96,10 +96,9 @@
 
 ## Gmail label
 
-ผู้ใช้บอกว่าอีเมล KTC อยู่ใน `label:financial-ktc-[card]`
-- **ยังไม่รู้ว่า `[card]` เป็นชื่อจริงหรือตัวแทนชื่อบัตร** ให้ถามผู้ใช้ก่อน
-- ถ้าเป็น label เดียว: เปิดใช้ด้วย `PUT /email-sources/ktc_pdf` body `{"gmail_label": "<label>", "is_active": true, "account_id": <id ของ KTC>}`
-- ถ้ามีหลายบัตร (label ละใบ): schema ตอนนี้รองรับ 1 แถวต่อ source เท่านั้น อย่าแก้ schema เอง ให้แจ้งผู้ใช้ เพราะต้องให้ main track เพิ่มให้
+อีเมล KTC อยู่ใน label ชื่อ `financial-ktc-[card]` (ชื่อจริงตามนี้ ผู้ใช้ยืนยันแล้ว มี label เดียว)
+- **ต้องตรวจก่อนใช้**: gmail-service สร้าง query เป็น `label:<ชื่อ>` แต่ Gmail search อาจตีความวงเล็บเหลี่ยมไม่ตรงตัว (บางครั้งต้องเขียนเป็น `label:financial-ktc--card-`) ให้ลอง `GET localhost:8000/api/emails?labels=financial-ktc-[card]&max_results=5` ถ้าได้ 0 ฉบับ ให้ลองรูปแบบที่แทนอักขระพิเศษด้วย `-` แล้วใช้รูปแบบที่ได้ผลเป็นค่า `gmail_label`
+- เปิดใช้ด้วย `PUT localhost:8002/email-sources/ktc_pdf` body `{"gmail_label": "<รูปแบบที่ได้ผล>", "is_active": true, "account_id": <id ของ บัตรเครดิต KTC จาก GET /accounts>}`
 
 ## ส่งต่อให้ main track (ไม่ใช่งานของ KTC track)
 
