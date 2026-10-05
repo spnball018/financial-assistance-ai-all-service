@@ -78,6 +78,11 @@ PRD ต้องการให้ผู้ใช้กด Refresh แล้ว�
 | T1.1 gmail-service | เสร็จและทดสอบแล้ว (ยกเว้น endpoint ไฟล์แนบ) |
 | T1.2 parser KBank | เสร็จ ทดสอบกับอีเมลจริง 419 ฉบับ |
 | API: `/accounts`, `/categories`, `/email-sources` | เขียนแล้ว ยังไม่ได้ทดสอบกับ DB จริง |
+| T1.4 sync engine | เสร็จ ทดสอบกับ DB จริงแล้ว (ดู [sync-engine.md](sync-engine.md)) |
+| T3.1 Merchant Memory | เสร็จ (`categorize/normalize.py`, `categorize/memory.py`) |
+| T3.2 AI categorizer | เขียนแล้ว เทสต์ด้วยตัวปลอม **ยังไม่ได้ลองกับ Gemini จริง** เพราะยังไม่ได้ตั้ง `GEMINI_API_KEY` |
+| T3.3 threshold → Uncategorized | เสร็จ |
+| T3.4 feedback loop | ฟังก์ชัน `memory.remember()` พร้อมแล้ว รอเรียกจาก confirm ใน T4.1 |
 | T0.1 fixture Shopee / Lazada | ยังไม่มี (รอชื่อ label) |
 | KTC (T1.5) | แยกไป [ktc-track.md](ktc-track.md) label: `financial-ktc-[card]` (ชื่อจริง) |
 
@@ -141,6 +146,7 @@ PRD ต้องการให้ผู้ใช้กด Refresh แล้ว�
 - **T2.2** ตรวจจับการจ่ายบิล KTC จาก KBank แล้วแปลงเป็น transfer KBank → KTC พร้อมผูกกับ statement
 
 **Phase 3: Categorization**
+- **T3 สรุปการทำจริง**: `POST /categorize` และเรียกอัตโนมัติหลัง `POST /sync` จัดหมวดเฉพาะ leaf ที่ pending ส่วนรุ่น Gemini ตั้งผ่าน env `GEMINI_MODEL` (ค่าเริ่มต้น `gemini-2.5-flash` ยังไม่ได้ยืนยันว่ายังเปิดให้ใช้ ต้องตรวจด้วย `models.list` เมื่อมี key) DB จริงมีร้าน/ผู้รับ 82 รายจาก 152 รายการ
 - **T3.1** `categorize/memory.py`:
   - `normalize_merchant()` (ตัดเลขสาขา/รหัส/ช่องว่าง, ทำเป็นตัวพิมพ์เล็ก) แล้ว lookup แบบตรงกันพอดี
   - ผู้รับพร้อมเพย์ใช้ชื่อบัญชีเป็น key

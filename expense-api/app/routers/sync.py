@@ -3,6 +3,8 @@ import os
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.db import get_engine
+from app.routers.categorize import get_classifier
+from categorize.service import categorize_pending
 from sync import engine as sync_engine
 from sync import repo
 from sync.gmail_client import GmailServiceClient, MailClient
@@ -15,14 +17,18 @@ def get_mail_client() -> MailClient:
 
 
 @router.post("")
-def run_sync(mail: MailClient = Depends(get_mail_client)):
-    """Pull new emails for every active source and add pending transactions.
+def run_sync(mail: MailClient = Depends(get_mail_client), classifier=Depends(get_classifier)):
+    """Pull new emails for every active source, add pending transactions, then categorize them.
     Can take minutes on the first run (3 months of mail)."""
     try:
         result = sync_engine.run_sync(get_engine(), mail)
     except sync_engine.SyncBusy:
         raise HTTPException(status_code=409, detail="A sync is already running")
-    return {"run_id": result.run_id, "counts": result.counts}
+    try:
+        categorized = categorize_pending(get_engine(), classifier)
+    except Exception as e:  # the sync itself succeeded; categorizing can be re-run via POST /categorize
+        categorized = {"error": type(e).__name__}
+    return {"run_id": result.run_id, "counts": result.counts, "categorize": categorized}
 
 
 @router.post("/reparse")

@@ -107,6 +107,8 @@ Response `200`
 
 Errors: `409` มี sync อื่นกำลังรัน (sync ที่ค้าง `running` นานเกิน 30 นาทีถือว่าตายแล้ว และไม่บล็อก)
 
+หลัง sync เสร็จจะจัดหมวดอัตโนมัติ (เหมือนเรียก `POST /categorize`) และใส่ผลใน key `categorize` ของ response ถ้าการจัดหมวดล้ม sync ยังถือว่าสำเร็จ และ key นี้จะเป็น `{"error": "<ชื่อ exception>"}`
+
 #### ✅ `POST /sync/reparse?source={source}`
 parse อีเมลทุกฉบับของแหล่งนั้นที่เก็บใน `raw_emails` ใหม่ ไม่เรียก Gmail ใช้ตอนแก้หรือเพิ่ม parser รันซ้ำได้ไม่ซ้ำข้อมูล เพราะมี `dedup_key`
 
@@ -126,6 +128,29 @@ Errors: `404` ไม่มี parser สำหรับ source นี้
 ]
 ```
 `status`: `running | success | failed`
+
+### จัดหมวดหมู่
+
+#### ✅ `POST /categorize`
+จัดหมวดรายการที่ `pending`, `kind=expense`, ยังไม่มีหมวด (`category_source='none'`) และเป็น leaf (ไม่มีลูก) ตามลำดับ
+1. ตั้ง `merchant_key` จาก `merchant_raw` (ตัดวงเล็บ, ตัวเลขสาขา/รหัส, เครื่องหมาย, คำนำหน้าชื่อ แล้วทำเป็นตัวพิมพ์เล็ก)
+2. **Merchant Memory**: ถ้า `merchant_key` ตรงกับที่ผู้ใช้เคย confirm จะได้ `category_source='memory'`
+3. **AI** (Gemini): ส่งทีละไม่เกิน 25 รายการ ถ้า confidence ≥ `AI_CONFIDENCE_THRESHOLD` (ค่าเริ่มต้น 0.7) และเป็นหมวด leaf ที่มีอยู่จริง จะได้หมวดนั้น ไม่งั้นได้ "Uncategorized" ทั้งสองกรณีเป็น `category_source='ai'` และเก็บ `ai_confidence`, `ai_reason`
+4. ถ้าไม่ได้ตั้ง AI ไว้ (ไม่มี `GEMINI_API_KEY` และไม่ได้เปิด Vertex) หรือ AI ล้ม รายการจะคงเป็น `none` และถูกลองใหม่ในการเรียกครั้งถัดไป
+
+Response
+```json
+{"memory": 12, "ai": 30, "uncategorized": 5, "left": 0}
+```
+| ฟิลด์ | ความหมาย |
+|---|---|
+| `memory` | ได้หมวดจาก Merchant Memory |
+| `ai` | AI มั่นใจพอ ได้หมวดที่ AI เลือก |
+| `uncategorized` | AI ไม่มั่นใจ หรือตอบหมวดที่ใช้ไม่ได้ จึงได้ Uncategorized |
+| `left` | ยังไม่มีหมวด (ไม่มี AI หรือ AI ล้ม) |
+| `error` | มีเมื่อ AI ล้ม เช่น `"ai: ClientError"` (มีแค่ชื่อ exception เพราะข้อความอาจมีชื่อร้านและยอดเงิน) |
+
+ข้อมูลที่ส่งไปให้ Gemini มีแค่ id, ชื่อร้าน/ผู้รับ, ช่องทาง, ยอดเงิน และคำอธิบาย ไม่มีเลขบัญชี
 
 ### ตั้งค่า KTC
 
