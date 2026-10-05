@@ -7,16 +7,20 @@ volumes:
 
 services:
 
+  # Every port is bound to 127.0.0.1: nothing here has authentication yet, so keep it off the LAN.
+# Secrets come from ./.env (see .env.example) and ./expense-api/.env.
+
   # ── PostgreSQL ────────────────────────────────────────────────────────────
   postgres:
     image: postgres:16-alpine
     container_name: financial-ai-postgres
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      # only used when the volume is first created; changing it later needs ALTER USER inside postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: financial
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
@@ -34,7 +38,7 @@ services:
       context: ./gmail-service
     container_name: financial-ai-gmail
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
       - ./credentials.json:/app/credentials.json:ro
       - ./gmail-service/token.json:/app/token.json
@@ -56,7 +60,7 @@ services:
       context: ./credit-card-statement-service
     container_name: financial-ai-credit-card-statement
     ports:
-      - "8003:8000"
+      - "127.0.0.1:8003:8000"
     environment:
       - PYTHONUNBUFFERED=1
     networks:
@@ -75,14 +79,14 @@ services:
       context: ./expense-api
     container_name: financial-ai-expense-api
     ports:
-      - "8002:8000"
+      - "127.0.0.1:8002:8000"
     env_file:
       - path: ./expense-api/.env
         required: false
     environment:
       - GMAIL_SERVICE_URL=http://gmail-service:8000
       - CREDIT_CARD_STATEMENT_SERVICE_URL=http://credit-card-statement-service:8000
-      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/financial
+      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/financial
       - PYTHONUNBUFFERED=1
     networks:
       - financial-ai
@@ -98,13 +102,27 @@ services:
       retries: 3
       start_period: 15s
 
+  # ── Web UI (nginx serves the built app and proxies /api to expense-api) ────
+  web:
+    build:
+      context: ./web
+    container_name: financial-ai-web
+    ports:
+      - "127.0.0.1:3000:80"
+    networks:
+      - financial-ai
+    restart: unless-stopped
+    depends_on:
+      expense-api:
+        condition: service_healthy
+
   # ── One-shot OAuth helper (run manually when token.json is missing/expired) ─
   gmail-auth:
     build:
       context: ./gmail-service
     container_name: financial-ai-gmail-auth
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     volumes:
       - ./gmail-service:/app
       - ./credentials.json:/app/credentials.json
@@ -129,7 +147,7 @@ services:
     environment:
       - GMAIL_SERVICE_URL=http://gmail-service:8000
       - CREDIT_CARD_STATEMENT_SERVICE_URL=http://credit-card-statement-service:8000
-      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/financial
+      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/financial
       - PYTHONUNBUFFERED=1
     networks:
       - financial-ai
@@ -154,7 +172,7 @@ services:
     environment:
       - GMAIL_SERVICE_URL=http://gmail-service:8000
       - CREDIT_CARD_STATEMENT_SERVICE_URL=http://credit-card-statement-service:8000
-      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/financial
+      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/financial
       - PYTHONUNBUFFERED=1
     networks:
       - financial-ai

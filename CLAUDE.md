@@ -4,12 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repo is
 
-The top-level orchestration repo for the Financial Assistance AI project. It holds almost no application code. Its job is to wire separate services together in `docker-compose.yml` on a shared `financial-ai` bridge network:
+The Financial Assistance AI project: a personal expense tracker plus the services it needs, wired together in `docker-compose.yml` on a shared `financial-ai` bridge network. All host ports are bound to `127.0.0.1` (there is no auth yet).
 
-- **`gmail-service/`** (git submodule, FastAPI, host port 8000): queries Gmail by label, date and text. Needs Google OAuth (`credentials.json` + `token.json`).
-- **`credit-card-statement-service/`** (lives in this repo, not a submodule; FastAPI, host port **8003** → container port 8000): `POST /upload-statement/` parses an uploaded CSV with `Date`, `Description` and `Amount` columns into transactions.
+- **`expense-api/`** (in this repo; FastAPI + Alembic, host port 8002): owns the Postgres schema `ledger` and all money logic: sync from Gmail, per-source parsers (`sources/`, `parsers/`), categorization (`categorize/`), review/confirm, balances, receipts. Layering: `app/routers` → `sync` → `sources` → `parsers`; `sync/repo.py` is the only writer during sync. Secrets in `expense-api/.env`.
+- **`web/`** (in this repo; React + Vite, host port 3000; nginx in Docker): the UI. Calls `/api/*`, which the Vite dev server or nginx proxies to expense-api.
+- **`gmail-service/`** (git submodule, FastAPI, host port 8000): generic Gmail reader (list by label, message bodies, attachments, move to Trash). No financial logic. Needs Google OAuth (`credentials.json` + `token.json`, scope `gmail.modify`).
+- **`credit-card-statement-service/`** (in this repo; FastAPI, host port **8003** → container port 8000): parses statement files; `POST /parse-ktc-pdf` for KTC e-Statements (KTC track, `docs/ktc-track.md`).
 - **`langgraph/`** (git submodule): the LangGraph AI assistant. It calls the tool services over HTTP using container-name URLs (`GMAIL_SERVICE_URL`, `CREDIT_CARD_STATEMENT_SERVICE_URL`) and persists to Postgres (`DATABASE_URL`). It has two entry points: `chatbot.py` (interactive) and `main.py` (batch). Both read secrets from `langgraph/.env`.
-- **`postgres`** (postgres:16-alpine, port 5432, user/password `postgres`/`postgres`, database `financial`).
+- **`postgres`** (postgres:16-alpine, port 5432, user `postgres`, password from `./.env` `POSTGRES_PASSWORD` (default `postgres`), database `financial`).
 
 Code changes to `gmail-service` or `langgraph` must be committed inside that submodule's own repo. Then commit the updated submodule pointer here. If those directories are empty, run `git submodule update --init --recursive`.
 
@@ -19,7 +21,7 @@ Code changes to `gmail-service` or `langgraph` must be committed inside that sub
 # One-time Gmail OAuth (writes gmail-service/token.json; opens auth server on :8080)
 docker compose --profile manual up --build gmail-auth
 
-# Start the always-on services (postgres, gmail-service, credit-card-statement-service)
+# Start the always-on services (postgres, gmail-service, credit-card-statement-service, expense-api, web)
 docker compose up -d
 
 # Run the LangGraph assistant (profile-gated; waits for the services above to be healthy)
@@ -49,12 +51,7 @@ Design docs live in `docs/`: `expense-tracker-plan.md` (plan + status), `sync-en
 
 `expense-api` has a pytest suite; `web` type-checks and builds with `npm run build`. The other services are verified by running them.
 
-## Known README inaccuracies
-
-`README.md` predates the current layout. Trust `docker-compose.yml` over it:
-- The README says `--profile auth`. The actual profile for `gmail-auth` is `manual`.
-- The README refers to the path `financial-assistance-ai-gmail-service/`. The submodule is actually at `gmail-service/`.
-- The README's service table lists only Gmail.
+Migrations: add `expense-api/alembic/versions/NNNN_*.py` with a linear `down_revision`, then update `docs/er-diagram.md` (and re-render the PNG) and `docs/api-spec.md` for any API change.
 
 ## Adding a new tool service
 

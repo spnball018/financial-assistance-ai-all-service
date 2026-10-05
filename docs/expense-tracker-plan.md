@@ -90,6 +90,7 @@ PRD ต้องการให้ผู้ใช้กด Refresh แล้ว�
 | T6.6 รายรับ | เสร็จบางส่วน: หมวดรายรับ 5 หมวด (migration 0008), บันทึกรายรับเองผ่าน `POST /transactions` (`kind=income`), รายงานรายรับและยอดสุทธิ · **ยังไม่มี**: ดึงเงินเข้าจากอีเมล (ต้องรู้ก่อนว่า SCB/ธนาคารอื่นส่งอีเมลแจ้งเงินเข้าไหม) |
 | หน้าตั้งค่าเพิ่ม | เสร็จ: แหล่งอีเมล (แก้ label/ผู้ส่ง/บัญชี/เปิดปิด) และกฎที่จำไว้ (ดู/ลบ, `GET/DELETE /merchant-rules`) |
 | T6.5 ใบเสร็จ | เสร็จ: migration 0009 (`receipts`, `transactions.receipt_id`), อ่านด้วย Gemini vision (ทดสอบกับใบเสร็จสมมติ: อ่านครบ 4 รายการ + ส่วนลดใน 3.8 วินาที), แก้ก่อนแยก, บรรทัดส่วนต่างให้ลูกรวมเท่าแม่, ยกเลิกการแยกได้, ทดสอบ e2e ผ่านหน้าเว็บกับ DB ทดสอบ · ใช้การออกแบบที่เสนอ (เก็บรูปใน Postgres) ผู้ใช้ยังไม่ได้ยืนยัน · **ยังไม่ทำ**: ถ่ายใบเสร็จก่อนรายการเข้าแล้วจับคู่อัตโนมัติ, ย่อรูปก่อนเก็บ |
+| Phase 5 hardening | ทำแล้ว: พอร์ตทั้งหมดผูกกับ `127.0.0.1`, รหัส Postgres จาก `./.env` (`.env.example`), SQLAlchemy `hide_parameters` กันค่าข้อมูลหลุดใน log, ตรวจ log ทั้งหมดแล้วไม่มีรหัสผ่าน/เนื้อหา PDF, เพิ่ม `web` ใน compose (Dockerfile + nginx), เขียน README ใหม่, อัปเดต CLAUDE.md · **ยังไม่ได้ทดสอบ** compose/Dockerfile ของ web (docker ต้องใช้ sudo) · ยังไม่ได้ทำ: `/security-review`, `user:` ใน compose ของ gmail-service |
 | T3.4 feedback loop | เสร็จ: confirm และการแก้หมวดรายการที่ confirm แล้วจะบันทึก memory และใช้กับรายการ pending ร้านเดียวกันทันที |
 | T0.1 fixture Shopee / Lazada | ยังไม่มี (รอชื่อ label) |
 | KTC (T1.5) | แยกไป [ktc-track.md](ktc-track.md) label: `financial-ktc-[card]` (ชื่อจริง) |

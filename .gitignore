@@ -47,6 +47,9 @@ Thumbs.db
 credentials.json
 financial-assistance-ai-gmail-service/token.json
 
+# docker compose secrets
+/.env
+
 # expense-api
 expense-api/.env
 expense-api/tests/fixtures/*

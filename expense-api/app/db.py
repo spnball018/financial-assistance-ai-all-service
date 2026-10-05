@@ -12,5 +12,6 @@ def get_engine() -> Engine:
     if _engine is None:
         # compose passes a plain postgresql:// URL; use the psycopg (v3) driver
         url = os.environ["DATABASE_URL"].replace("postgresql://", "postgresql+psycopg://", 1)
-        _engine = create_engine(url, pool_pre_ping=True)
+        # hide_parameters: DB errors must not echo row values (email bodies, attachment bytes) into logs
+        _engine = create_engine(url, pool_pre_ping=True, hide_parameters=True)
     return _engine
