@@ -46,3 +46,8 @@ Thumbs.db
 
 credentials.json
 financial-assistance-ai-gmail-service/token.json
+
+# expense-api
+expense-api/.env
+expense-api/tests/fixtures/*
+!expense-api/tests/fixtures/.gitkeep

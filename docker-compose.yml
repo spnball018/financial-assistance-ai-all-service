@@ -69,6 +69,35 @@ services:
       retries: 3
       start_period: 10s
 
+  # ── Expense API (sync, reconcile, categorize, REST for the web UI) ─────────
+  expense-api:
+    build:
+      context: ./expense-api
+    container_name: financial-ai-expense-api
+    ports:
+      - "8002:8000"
+    env_file:
+      - path: ./expense-api/.env
+        required: false
+    environment:
+      - GMAIL_SERVICE_URL=http://gmail-service:8000
+      - CREDIT_CARD_STATEMENT_SERVICE_URL=http://credit-card-statement-service:8000
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/financial
+      - PYTHONUNBUFFERED=1
+    networks:
+      - financial-ai
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      # python:slim has no curl, so probe with the stdlib
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/docs')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
   # ── One-shot OAuth helper (run manually when token.json is missing/expired) ─
   gmail-auth:
     build:
