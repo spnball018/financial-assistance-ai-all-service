@@ -70,15 +70,32 @@ expense-api/
 
 ## งาน
 
-**K1. `credit-card-statement-service`: `POST /parse-ktc-pdf`**
-- รับ multipart: `file` (PDF) และ `password`
+**K1. `credit-card-statement-service`: `POST /parse-ktc-pdf`** (เสร็จ)
+- รับ multipart: `file` (PDF, ไม่เกิน 10 MB) และ `password` โค้ดอยู่ใน `credit-card-statement-service/ktc_pdf.py` และ endpoint ท้าย `main.py`
 - ใช้ `pikepdf` ปลดล็อก และ `pdfplumber` อ่านตาราง ทำในหน่วยความจำ ห้ามเขียนไฟล์ที่ปลดล็อกแล้วลงดิสก์
 - คืน JSON
-  - ข้อมูล statement: statement date, due date, ยอดรวมใหม่, เลขบัตรแบบปิดบางส่วน
-  - `lines`: posting date, transaction date (ถ้ามี), description, amount, approval/reference code (ถ้ามี) และประเภท (`purchase|payment|refund|fee|interest|other`)
-- รหัสผ่านผิดให้คืน 401 และ PDF อ่านไม่ได้ให้คืน 422
-- ห้าม log รหัสผ่านหรือเนื้อหา PDF
-- เพิ่ม `pikepdf` และ `pdfplumber` ใน `credit-card-statement-service/requirements.txt` และห้ามทำ endpoint `/upload-statement/` เดิมพัง
+  - `statement`: `statement_date`, `due_date`, `card_masked` (เช่น `1234-56XX-XXXX-7890`), `card_last4`, `previous_balance`, `total_new_balance`, `minimum_payment`
+  - `lines`: `transaction_date`, `posting_date`, `description`, `amount`, `approval_code` และ `type` (`purchase|payment|refund|fee|interest|other`)
+  - **`amount` เป็น string แบบ Decimal มีเครื่องหมาย** (เช่น `"-1000.00"`) payment/refund เป็นค่าติดลบ ส่วน K2 ต้องแปลงเป็นค่าบวกตามกติกาต้นไม้เอง
+  - วันที่เป็น ISO `YYYY-MM-DD`
+  - `approval_code` เป็น `null` เสมอ เพราะ statement จริงไม่มีคอลัมน์นี้ (ยังคงฟิลด์ไว้เผื่อ template อื่น)
+- รหัสผ่านผิดคืน 401 (`{"detail":{"code":"wrong_password"}}`) และไฟล์ใหญ่เกิน 413 ส่วน PDF อ่านไม่ได้หรือ layout เปลี่ยนคืน 422 พร้อม `detail.code` (`unreadable_pdf`, `summary_layout_changed`, `table_header_not_found`, `line_layout_changed`, `line_without_amount`, `balance_rows_not_found`, `balance_check_failed`, `bad_date`, `bad_amount`) โดย `code` ไม่มีเนื้อหา PDF
+- ห้าม log รหัสผ่านหรือเนื้อหา PDF: โค้ดไม่ log อะไรเอง และไม่ส่งข้อความ exception ของไลบรารี PDF ออกไป
+- เพิ่ม `pikepdf` และ `pdfplumber` ใน `credit-card-statement-service/requirements.txt` แล้ว ส่วน `requirements-dev.txt` (pytest, httpx, reportlab) ใช้รันเทสต์ ส่วน endpoint `/upload-statement/` เดิมมีเทสต์ว่ายังทำงาน
+
+**หลักการ parse (ทนต่อ template เปลี่ยน)**
+- ไม่ยึดพิกัดตายตัว: ตารางสรุปหน้า 1 อ่านจากป้ายภาษาอังกฤษ (`CLOSING DATE`, `PAYMENT DUE DATE`, `CARD NUMBER`, `MINIMUM PAYMENT`) และตารางรายการหาจากแถวหัวตาราง (`TRANS. DATE / POSTING DATE / DESCRIPTION / AMOUNT (BAHT)`)
+- **fail closed**: ต้อง `previous_balance + sum(lines) == total_new_balance` ไม่เช่นนั้นคืน 422 `balance_check_failed` ไม่เจอหัวตารางหรือแถวที่เริ่มด้วยวันที่แต่ parse ไม่ได้ ก็คืน 422 เช่นกัน เพื่อให้ sync บันทึกเป็น `failed` แทนที่จะได้ตัวเลขผิดเงียบๆ
+- แก้ parser แล้วใช้ `POST /sync/reparse?source=ktc_pdf` (main track) เพื่อ parse ใหม่จาก PDF ที่เก็บไว้ โดยต้อง bump `PARSER_VERSION`
+- ไม่ใช้ OCR หรือบริการภายนอก เพราะ PDF มี text layer และข้อมูลเป็นข้อมูลการเงินส่วนตัว ถ้าจะใช้เป็นทางสำรองในอนาคตต้องให้ผู้ใช้ตัดสินใจเป็นรายครั้ง
+
+**ข้อเท็จจริงของ e-Statement KTC ที่ใช้เป็น spec**
+- รหัสผ่าน PDF คือวันเกิดรูปแบบ `ddMmmyy` ปี ค.ศ. 2 หลัก (เช่น `15Dec85`) ตามที่อีเมลระบุ
+- วันที่ในไฟล์เป็น `dd/mm/yy` ซึ่งปี 2 หลักที่ `>= 50` ตีเป็น พ.ศ. (69 → 2569 → 2026) และ `< 50` ตีเป็น ค.ศ. (26 → 2026) ปี 4 หลักที่มากกว่า 2400 ลบ 543
+- แถวรายการ: วันที่ใช้บัตร | วันที่บันทึก | รายการ | ยอด (ชิดขวา) ยอดติดลบเขียนเป็น `-` แยกด้วยช่องว่างก่อนตัวเลข
+- แถวไม่มีวันที่แถวแรกคือยอดรอบที่แล้ว และแถวสุดท้ายคือสรุปยอดรอบนี้ (ซึ่งเท่ากับยอดชำระเกิน/overpaid ในกรอบสรุปเมื่อติดลบ) ไม่มีช่อง "ยอดรวมใหม่" แยกต่างหาก
+- รายการ description ที่ยาวอาจขึ้นบรรทัดใหม่ในคอลัมน์ description ซึ่ง parser ต่อเข้ากับรายการก่อนหน้า
+- การจัด `type`: ยอดติดลบ → `payment` ถ้า description มี `PAYMENT`/`AUTOPAY`/`ชำระ` ไม่เช่นนั้น `refund` ยอดบวก → `interest` (`INTEREST`/`ดอกเบี้ย`), `fee` (`FEE`/`VAT`/`ค่าธรรมเนียม` เป็นคำเต็ม เพราะ `COFFEE` ต้องไม่ติด) นอกนั้น `purchase` คำที่ยังไม่เคยเห็นอาจถูกจัดเป็น `purchase` ผิด ต้องตรวจเมื่อเจอ statement ใหม่
 
 **K2. `expense-api/sources/ktc.py`**
 - หา attachment ที่เป็น PDF แล้วเรียก `POST {CREDIT_CARD_STATEMENT_SERVICE_URL}/parse-ktc-pdf` ด้วย httpx ซึ่ง env นี้มีใน compose ของ expense-api แล้ว
@@ -140,14 +157,15 @@ expense-api/
 ## Verification
 
 - `pytest` ใน `expense-api` ผ่าน และเทสต์ของ main track ต้องไม่พัง
-- `curl -F file=@<pdf> -F password=<pw> localhost:8001/parse-ktc-pdf` ได้ JSON ที่ยอดรวมของ `lines` (เฉพาะ purchase/fee/interest) ตรงกับยอดในหน้าแรกของ PDF
+- `curl -F file=@<pdf> -F password=<pw> localhost:8001/parse-ktc-pdf` ได้ JSON โดย `previous_balance` + ผลรวม `amount` ของ `lines` ทั้งหมด (ทุก type รวม payment/refund ที่ติดลบ) ต้องเท่ากับ `total_new_balance` ซึ่ง endpoint ตรวจเองและคืน 422 ถ้าไม่ตรง (ข้อความเดิมที่ให้รวมเฉพาะ purchase/fee/interest ไม่ตรงกับหน้า PDF จริงที่มียอดยกมาและยอดชำระ)
+- เทสต์ของ K1: `cd credit-card-statement-service && pytest` (ต้องมี `pip install -r requirements.txt -r requirements-dev.txt`)
 - ในทุก log ต้องไม่มีรหัสผ่านหรือเนื้อหา PDF
 
 ## สถานะ
 
 | งาน | สถานะ |
 |---|---|
-| K1 `/parse-ktc-pdf` | ยังไม่เริ่ม |
+| K1 `/parse-ktc-pdf` | เสร็จ: เทสต์ 8 ข้อผ่าน และทดสอบกับ statement จริง 1 ฉบับแล้ว (10 รายการ ตรวจยอดผ่าน) ยังไม่ได้ลองรันใน docker (ใช้ Python 3.10 ใน Dockerfile) และยังไม่ได้ curl กับ container |
 | K2 `sources/ktc.py` | stub |
 | K3 รหัสผ่าน KTC | stub |
 | K4 เทสต์/fixture | ยังไม่เริ่ม |
