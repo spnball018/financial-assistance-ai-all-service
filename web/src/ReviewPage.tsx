@@ -186,7 +186,7 @@ export function ReviewPage({ categories, accounts }: { categories: Category[]; a
                 onChange={(choice) => setCategory(t, choice)}
               />
             ) : (
-              <span className="muted small">ดูรายการย่อย</span>
+              <span className="muted small">{t.kind === "opening" ? "ยอดยกมา" : t.kind === "income" ? "รายรับ" : "ดูรายการย่อย"}</span>
             )}
             {isLeaf && t.merchant_key && (
               <label className="remember small muted" title="ผู้รับที่แต่ละครั้งเป็นคนละเรื่อง เช่น โอนให้เพื่อน">

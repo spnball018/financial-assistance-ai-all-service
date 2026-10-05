@@ -35,6 +35,7 @@ def parse(email: RawEmail, ctx: ParseContext) -> ParseResult:
             "fee": str(t.fee),
             "from_account": t.from_account,
             "to_account": t.to_account,
+            "balance_after": str(t.balance_after) if t.balance_after is not None else None,
             # T2.2 turns these into a KBank -> KTC transfer
             "ktc_bill_payment": t.channel == "bill_payment" and KTC_PAYEE in (t.merchant_raw or "").upper(),
         },

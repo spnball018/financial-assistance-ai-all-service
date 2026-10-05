@@ -36,6 +36,27 @@
 ```
 `type`: `bank | credit_card | ewallet | cash | investment`
 
+#### ✅ `GET /accounts/balances`
+ยอดคงเหลือของทุกบัญชี คำนวณจาก view `ledger.v_account_postings`
+```json
+[{"account_id": 1, "name": "KBank ใช้จ่าย", "type": "bank", "is_active": true,
+  "balance": 12800.0, "balance_with_pending": 11801.0, "pending_count": 1, "last_movement_at": "2026-10-03T03:52:02+00:00",
+  "opening": {"amount": 10000.0, "as_of": "2026-09-01"},
+  "bank_reported": {"balance": 14189.79, "as_of": "2026-10-03T03:52:02+00:00", "computed": 14300.0, "difference": -110.21}}]
+```
+- `balance` = ยอดยกมา + รายการ `confirmed` ตั้งแต่ต้นวัน `opening.as_of` (เวลาไทย) ถ้าไม่มียอดยกมาจะนับทุกรายการ ส่วน `balance_with_pending` รวมรายการ `pending` ด้วย และไม่นับ `ignored`
+- การนับยอด: รายการระดับบนสุด (root) เท่านั้นที่ขยับยอดบัญชี (expense/transfer = ออก, income/opening = เข้า) ลูกในต้นไม้ไม่นับซ้ำ ส่วนทุกรายการ transfer เพิ่มยอดให้บัญชีปลายทาง
+- `bank_reported`: เฉพาะบัญชีที่ผูกกับแหล่ง `kbank_email` "ยอดถอนได้" จากอีเมล K PLUS ล่าสุด เทียบกับยอดที่ระบบคำนวณ ณ เวลาเดียวกัน (รวม pending) ถ้าต่างกัน มักเป็นเงินเข้าที่ไม่มีอีเมลแจ้ง หรือยังไม่ได้ใส่ยอดยกมา
+
+#### ✅ `PUT /accounts/{id}/opening-balance`
+```json
+{"amount": "10000.00", "as_of": "2026-09-01"}
+```
+ยอดเงิน ณ ต้นวัน `as_of` (บัญชีละ 1 รายการ ส่งซ้ำ = แก้) บัตรเครดิตใส่ติดลบสำหรับยอดค้าง เก็บเป็น transaction `node_type=opening_balance`, `kind=opening`, `status=confirmed` ไม่อยู่ในรายงานรายจ่าย · `404` ถ้าไม่มีบัญชี
+
+#### ✅ `DELETE /accounts/{id}/opening-balance`
+`204`
+
 #### ✅ `POST /accounts`
 ```json
 {"name": "กองทุน SSF", "type": "investment", "institution": "KAsset", "masked_ref": null, "purpose": null}

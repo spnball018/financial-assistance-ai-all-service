@@ -45,7 +45,8 @@ body { margin: 0; background: var(--bg); }
 .app { max-width: 1180px; margin: 0 auto; padding: 16px; }
 header { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; margin-bottom: 16px; }
 h1 { font-size: 20px; margin: 0; }
-nav { display: flex; gap: 4px; }
+nav { display: flex; gap: 4px; flex-wrap: wrap; }
+.tab { white-space: nowrap; }
 button {
   font: inherit; border: 1px solid var(--border); background: var(--surface); color: var(--text);
   padding: 6px 12px; border-radius: 6px; cursor: pointer;
@@ -110,6 +111,16 @@ table.settings .s-purpose { min-width: 200px; }
 table.settings tr.inactive td { opacity: 0.55; }
 table.settings tr.new-row td { background: var(--bg); }
 .error-text { color: var(--error); }
+.ok-text { color: var(--ok); }
+.warn-text { color: var(--warn); }
+.neg { color: var(--error); }
+tfoot td { font-weight: 600; border-bottom: none; }
+table.balances .b-open { min-width: 380px; }
+.opening { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.opening input {
+  font: inherit; padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface); color: var(--text); width: 130px;
+}
 @media (max-width: 640px) {
   .app { padding: 12px; }
   /* rows become cards: merchant + amount on top, date, then category and actions */
@@ -139,4 +150,12 @@ table.settings tr.new-row td { background: var(--bg); }
   .s-name { grid-area: name; } .s-type { grid-area: type; } .s-inst { grid-area: inst; }
   .s-ref { grid-area: ref; } .s-purpose { grid-area: purpose; } .s-active { grid-area: active; }
   .s-save { grid-area: save; }
+  table.balances tbody tr, table.balances tfoot tr {
+    display: grid; grid-template-columns: 1fr auto;
+    grid-template-areas: "name bal" "pend pend" "open open";
+  }
+  table.balances tfoot { display: block; }
+  table.balances .b-open { min-width: 0; }
+  .b-name { grid-area: name; } .b-bal { grid-area: bal; font-weight: 600; }
+  .b-pend { grid-area: pend; text-align: left; } .b-open { grid-area: open; }
 }

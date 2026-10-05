@@ -86,6 +86,7 @@ PRD ต้องการให้ผู้ใช้กด Refresh แล้ว�
 | T4.2 web | หน้า ตรวจรายการ (Review Queue) และ สรุปรายเดือน เสร็จ (`web/`, React 19 + Vite 8, dev server พอร์ต 3000 proxy `/api` → expense-api) ยังไม่มีหน้า Manual Entry / Settings และยังไม่ได้ใส่ใน docker compose |
 | T6.1 บัญชีของตัวเอง | เสร็จ: migration 0005 (12 บัญชี รวมเป๋าตัง), `GET/POST/PATCH /accounts`, หน้า ตั้งค่า → บัญชีของฉัน · ล้างข้อมูลรายการทั้งหมดใน DB จริงแล้ว (ผู้ใช้ขอ 2026-10-05) จะ sync ใหม่หลัง T6.2 |
 | T6.2 + T6.3 กฎต่อผู้รับและ UI | เสร็จ: migration 0006, จับคู่ปลายทางกับ `masked_ref`, กฎ category/transfer/ask (กฎ transfer จำต่อ ผู้รับ+เลขท้าย 4 ตัว), dropdown มีกลุ่ม "โอนเข้าบัญชีตัวเอง", ติ๊ก "ไม่ต้องจำผู้รับนี้", สรุปรายเดือนแสดงยอดโอน · sync ใหม่ใน DB จริงแล้ว: 152 รายการ (AI 87, ไม่แน่ใจ 65, ยังไม่มีเลขท้ายบัญชีจึงจับการโอนอัตโนมัติไม่ได้) |
+| T6.4 ยอดยกมาและยอดคงเหลือ | เสร็จ: migration 0007 (`kind=opening`, view `v_account_postings`), `GET /accounts/balances`, `PUT/DELETE /accounts/{id}/opening-balance`, เทียบ "ยอดถอนได้" ในอีเมล KBank ล่าสุด, หน้า ยอดคงเหลือ · view แยกขาบัญชีแบบบัญชีคู่โดยไม่เปลี่ยนวิธีเก็บข้อมูล (ตามที่ตกลง) |
 | T3.4 feedback loop | เสร็จ: confirm และการแก้หมวดรายการที่ confirm แล้วจะบันทึก memory และใช้กับรายการ pending ร้านเดียวกันทันที |
 | T0.1 fixture Shopee / Lazada | ยังไม่มี (รอชื่อ label) |
 | KTC (T1.5) | แยกไป [ktc-track.md](ktc-track.md) label: `financial-ktc-[card]` (ชื่อจริง) |

@@ -1,4 +1,6 @@
 import re
+from datetime import date
+from decimal import Decimal
 from typing import Literal, Optional
 
 from fastapi import APIRouter, HTTPException
@@ -7,6 +9,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from app.db import get_engine
+from ledger import balances as bal
 
 router = APIRouter(tags=["accounts"])
 
@@ -98,3 +101,32 @@ def update_account(account_id: int, body: AccountPatch):
     if row is None:
         raise HTTPException(status_code=404, detail="account not found")
     return dict(row._mapping)
+
+
+@router.get("/accounts/balances")
+def account_balances():
+    """Per account: balance (confirmed), balance_with_pending, opening balance, and for the KBank account
+    the bank's latest reported balance next to the computed one."""
+    with get_engine().connect() as conn:
+        return bal.balances(conn)
+
+
+class OpeningBalance(BaseModel):
+    amount: Decimal = Field(max_digits=15, decimal_places=2)
+    as_of: date
+
+
+@router.put("/accounts/{account_id}/opening-balance")
+def put_opening_balance(account_id: int, body: OpeningBalance):
+    """Balance at the start of `as_of` (Bangkok). Negative for money owed (credit card)."""
+    try:
+        with get_engine().begin() as conn:
+            return bal.set_opening(conn, account_id, body.amount, body.as_of)
+    except bal.NotFound:
+        raise HTTPException(status_code=404, detail="account not found")
+
+
+@router.delete("/accounts/{account_id}/opening-balance", status_code=204)
+def delete_opening_balance(account_id: int):
+    with get_engine().begin() as conn:
+        bal.delete_opening(conn, account_id)

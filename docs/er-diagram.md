@@ -1,6 +1,6 @@
 # ER diagram: schema `ledger`
 
-สร้างจาก DB จริง (migration 0006, 2026-10-05) ถ้าเพิ่ม migration ให้อัปเดตไฟล์นี้ด้วย ส่วนตาราง `alembic_version` ไม่ได้แสดง
+สร้างจาก DB จริง (migration 0007, 2026-10-05) ถ้าเพิ่ม migration ให้อัปเดตไฟล์นี้ด้วย ส่วนตาราง `alembic_version` ไม่ได้แสดง
 
 ภาพ PNG: [er-diagram.png](er-diagram.png) (render จาก Mermaid ข้างล่าง ใช้ดูใน editor ที่ไม่รองรับ Mermaid ถ้าแก้ diagram ให้ render ใหม่ด้วย `npx @mermaid-js/mermaid-cli -i <ไฟล์ .mmd> -o docs/er-diagram.png -w 2400 -b white`)
 
@@ -32,8 +32,8 @@ erDiagram
         bigint id PK
         int account_id FK
         bigint parent_id FK "ต้นไม้ แม่ -> ลูก"
-        text node_type "payment | statement | statement_line | order | order_item | adjustment | manual"
-        text kind "expense | income | transfer"
+        text node_type "payment | statement | statement_line | order | order_item | adjustment | manual | opening_balance | receipt_item"
+        text kind "expense | income | transfer | opening"
         int counter_account_id FK "บัญชีปลายทาง (บังคับเมื่อ transfer)"
         bigint ref_transaction_id FK "อ้างรายการที่เกี่ยวข้อง เช่น บิล KTC"
         text status "pending | confirmed | ignored"
@@ -179,6 +179,8 @@ erDiagram
 
 - **`v_reportable_expenses`**: `transactions` ที่ `status = 'confirmed'`, `kind = 'expense'` และไม่มีลูก (leaf) เป็นแหล่งเดียวของรายงานรายจ่าย จึงไม่นับรายการแม่และ transfer
 
+- **`v_account_postings`**: ความเคลื่อนไหวของเงินต่อบัญชี (บวก = เข้า, ลบ = ออก) ใช้คำนวณยอดคงเหลือ ขาบัญชีมาจากรายการ root (expense/transfer ออก, income/opening เข้า) และทุก transfer มีอีกขาเข้าบัญชีปลายทาง การโอนระหว่างบัญชีตัวเองจึงรวมกันได้ 0
+
 ## กติกาที่ schema บังคับ
 
 - `transactions.kind = 'transfer'` ต้องมี `counter_account_id`
@@ -188,5 +190,4 @@ erDiagram
 
 ## จะเปลี่ยนใน Phase 6 (ยังไม่มีใน DB)
 
-- **T6.4** `transactions`: `node_type = opening_balance` และ `kind = opening` สำหรับยอดเริ่มต้น และ view `v_postings` แปลงแต่ละรายการเป็น 2 ขา (เดบิต/เครดิต) ใช้คำนวณยอดคงเหลือ
 - **T6.5** ตารางเก็บรูปใบเสร็จ และ `node_type = receipt_item` สำหรับรายการย่อยจากใบเสร็จ

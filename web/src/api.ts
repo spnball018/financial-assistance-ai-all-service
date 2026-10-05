@@ -1,4 +1,4 @@
-import type { Account, AccountInput, Category, ConfirmResult, Status, Summary, SyncResult, Txn } from "./types";
+import type { Account, AccountInput, Balance, Category, ConfirmResult, Status, Summary, SyncResult, Txn } from "./types";
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -27,6 +27,13 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   categories: () => call<Category[]>("/categories"),
   accounts: () => call<Account[]>("/accounts"),
+  balances: () => call<Balance[]>("/accounts/balances"),
+  setOpening: (id: number, body: { amount: string; as_of: string }) =>
+    call<{ amount: number; as_of: string }>(`/accounts/${id}/opening-balance`, { method: "PUT", body: JSON.stringify(body) }),
+  deleteOpening: (id: number) =>
+    fetch(`/api/accounts/${id}/opening-balance`, { method: "DELETE" }).then((r) => {
+      if (!r.ok) throw new ApiError(r.status, r.statusText);
+    }),
   createAccount: (body: AccountInput) => call<Account>("/accounts", { method: "POST", body: JSON.stringify(body) }),
   updateAccount: (id: number, body: Partial<Account>) =>
     call<Account>(`/accounts/${id}`, { method: "PATCH", body: JSON.stringify(body) }),

@@ -28,6 +28,7 @@ class KbankTxn:
     from_account: str
     merchant_raw: str  # payee: company / account holder / wallet holder
     to_account: Optional[str]  # transfer account or wallet id, if any
+    balance_after: Optional[Decimal]  # "Available Balance" the bank reports after this transaction
     gmail_message_id: Optional[str]
 
     @property
@@ -70,8 +71,12 @@ def parse_kbank(message: dict) -> Optional[KbankTxn]:
         txn_no = en["Transaction Number"]
         amount = _money(en["Amount (THB)"])
         fee = _money(en.get("Fee (THB)", "0"))
-    except (KeyError, ValueError):
+    except (KeyError, ValueError, ArithmeticError):  # Decimal raises InvalidOperation (ArithmeticError)
         return None
+    try:
+        balance_after = _money(en["Available Balance (THB)"])
+    except (KeyError, ValueError, ArithmeticError):
+        balance_after = None
 
     from_account = en.get("Paid From Account") or en.get("From Account") or ""
     to_account = en.get("To Account") or en.get("To Wallet ID") or en.get("To PromptPay ID")
@@ -97,5 +102,6 @@ def parse_kbank(message: dict) -> Optional[KbankTxn]:
         from_account=from_account,
         merchant_raw=merchant,
         to_account=to_account,
+        balance_after=balance_after,
         gmail_message_id=message.get("id"),
     )

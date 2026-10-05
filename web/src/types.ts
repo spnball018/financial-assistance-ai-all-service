@@ -8,7 +8,7 @@ export interface Txn {
   account_id: number;
   counter_account_id: number | null;
   node_type: string;
-  kind: "expense" | "income" | "transfer";
+  kind: "expense" | "income" | "transfer" | "opening";
   status: Status;
   needs_review: boolean;
   amount: number;
@@ -84,4 +84,17 @@ export interface SyncResult {
   run_id: number;
   counts: Record<string, { fetched: number; new: number; duplicate: number; skipped: number; failed: number; error?: string }>;
   categorize?: { transfer?: number; memory?: number; ai?: number; uncategorized?: number; left?: number; error?: string };
+}
+
+export interface Balance {
+  account_id: number;
+  name: string;
+  type: AccountType;
+  is_active: boolean;
+  balance: number;
+  balance_with_pending: number;
+  pending_count: number;
+  last_movement_at: string | null;
+  opening: { amount: number; as_of: string } | null;
+  bank_reported: { balance: number; as_of: string; computed: number; difference: number } | null;
 }
