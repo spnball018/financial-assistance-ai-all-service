@@ -126,9 +126,88 @@ def test_gemini_adapter_builds_request_and_parses():
     class Client:
         models = Models()
 
-    out = GeminiClassifier(model="m-test", client=Client()).classify(
+    out = GeminiClassifier(Client(), model="m-test").classify(
         [Item(id=1, merchant="STARBUCKS", channel="bill_payment", amount=Decimal("120.00"))],
         [Category(5, "Food & Dining > Cafe & Bakery / อาหาร > คาเฟ่")])
     assert out[0].category_id == 5 and seen["model"] == "m-test"
     assert "STARBUCKS" in seen["contents"] and "5: Food & Dining > Cafe" in seen["contents"]
     assert seen["config"].response_mime_type == "application/json"
+
+
+def test_batch_size_from_env(cdb, monkeypatch):
+    monkeypatch.setenv("CATEGORIZE_BATCH_SIZE", "2")
+    for i in range(5):
+        add(cdb, f"k{i}", f"M{i}")
+    ai = FakeClassifier({f"M{i}": (cat_id(cdb, "Fuel"), 0.9) for i in range(5)})
+    categorize_pending(cdb, ai)
+    assert [len(c) for c in ai.calls] == [2, 2, 1]
+
+
+class TestAdapterSelection:
+    @pytest.fixture(autouse=True)
+    def clean_env(self, monkeypatch):
+        for k in ("CATEGORIZER", "GEMINI_API_KEY", "GOOGLE_CLOUD_PROJECT", "GOOGLE_CLOUD_LOCATION"):
+            monkeypatch.delenv(k, raising=False)
+
+    def test_default_without_key_is_none(self):
+        from categorize.ai import classifier_from_env
+        assert classifier_from_env() is None
+
+    def test_default_with_key_is_gemini_api(self, monkeypatch):
+        from categorize.ai import classifier_from_env
+        monkeypatch.setenv("GEMINI_API_KEY", "k")
+        c = classifier_from_env()
+        assert isinstance(c, GeminiClassifier) and not c._client._api_client.vertexai
+
+    def test_vertex(self, monkeypatch):
+        from categorize.ai import classifier_from_env
+        monkeypatch.setenv("CATEGORIZER", "vertex")
+        monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "my-proj")
+        monkeypatch.setenv("GOOGLE_CLOUD_LOCATION", "asia-southeast1")
+        try:
+            c = classifier_from_env()
+        except Exception as e:  # no Application Default Credentials on this machine
+            pytest.skip(f"Vertex client needs ADC: {type(e).__name__}")
+        api = c._client._api_client
+        assert api.vertexai and api.project == "my-proj" and api.location == "asia-southeast1"
+
+    @pytest.mark.parametrize("env,msg", [
+        ({"CATEGORIZER": "vertex"}, "GOOGLE_CLOUD_PROJECT"),
+        ({"CATEGORIZER": "gemini"}, "GEMINI_API_KEY"),
+        ({"CATEGORIZER": "llama"}, "unknown CATEGORIZER"),
+    ])
+    def test_misconfiguration_is_explicit(self, monkeypatch, env, msg):
+        from categorize.ai import classifier_from_env
+        for k, v in env.items():
+            monkeypatch.setenv(k, v)
+        with pytest.raises(RuntimeError, match=msg):
+            classifier_from_env()
+
+    def test_none_wins_over_key(self, monkeypatch):
+        from categorize.ai import classifier_from_env
+        monkeypatch.setenv("CATEGORIZER", "none")
+        monkeypatch.setenv("GEMINI_API_KEY", "k")
+        assert classifier_from_env() is None
+
+
+def test_misconfigured_categorizer_does_not_block_sync_endpoint(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+    from app.routers import sync as sync_router
+    from sync.engine import SyncResult
+
+    monkeypatch.setenv("CATEGORIZER", "vertex")
+    monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
+    monkeypatch.setattr(sync_router.sync_engine, "run_sync", lambda engine, mail: SyncResult(run_id=7, counts={}))
+    monkeypatch.setattr(sync_router, "get_engine", lambda: None)
+    app.dependency_overrides[sync_router.get_mail_client] = lambda: None
+    try:
+        client = TestClient(app)
+        r = client.post("/sync")
+        assert r.status_code == 200
+        assert r.json()["run_id"] == 7 and r.json()["categorize"] == {"error": "RuntimeError"}
+        r2 = client.post("/categorize")
+        assert r2.status_code == 500 and "GOOGLE_CLOUD_PROJECT" in r2.json()["detail"]
+    finally:
+        app.dependency_overrides.clear()

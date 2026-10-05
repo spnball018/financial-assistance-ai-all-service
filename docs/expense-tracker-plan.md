@@ -80,7 +80,7 @@ PRD ต้องการให้ผู้ใช้กด Refresh แล้ว�
 | API: `/accounts`, `/categories`, `/email-sources` | เขียนแล้ว ยังไม่ได้ทดสอบกับ DB จริง |
 | T1.4 sync engine | เสร็จ ทดสอบกับ DB จริงแล้ว (ดู [sync-engine.md](sync-engine.md)) |
 | T3.1 Merchant Memory | เสร็จ (`categorize/normalize.py`, `categorize/memory.py`) |
-| T3.2 AI categorizer | เขียนแล้ว เทสต์ด้วยตัวปลอม **ยังไม่ได้ลองกับ Gemini จริง** เพราะยังไม่ได้ตั้ง `GEMINI_API_KEY` |
+| T3.2 AI categorizer | adapter `gemini` / `vertex` / `none` เลือกด้วย env `CATEGORIZER` (registry `ADAPTERS` ใน `categorize/ai.py`) เทสต์ด้วยตัวปลอม **ยังไม่ได้ลองกับของจริง** ตอนนี้ใช้ `none` (memory อย่างเดียว) ไปก่อน |
 | T3.3 threshold → Uncategorized | เสร็จ |
 | T3.4 feedback loop | ฟังก์ชัน `memory.remember()` พร้อมแล้ว รอเรียกจาก confirm ใน T4.1 |
 | T0.1 fixture Shopee / Lazada | ยังไม่มี (รอชื่อ label) |

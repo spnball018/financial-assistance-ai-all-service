@@ -13,7 +13,6 @@ from categorize.normalize import normalize_merchant
 
 log = logging.getLogger("categorize")
 
-BATCH_SIZE = 25
 UNCATEGORIZED_EN = "Uncategorized"
 
 
@@ -30,6 +29,10 @@ class Counts:
         if self.error:
             d["error"] = self.error
         return d
+
+
+def _batch_size() -> int:
+    return max(1, int(os.environ.get("CATEGORIZE_BATCH_SIZE", "25")))
 
 
 def _threshold() -> float:
@@ -92,8 +95,9 @@ def categorize_pending(engine: Engine, classifier: Optional[Classifier]) -> dict
 
     valid = {x.id for x in cats}
     threshold = _threshold()
-    for start in range(0, len(rest), BATCH_SIZE):
-        batch = rest[start:start + BATCH_SIZE]
+    size = _batch_size()
+    for start in range(0, len(rest), size):
+        batch = rest[start:start + size]
         items = [Item(id=r.id, merchant=r.merchant_raw or "", channel=r.channel or r.node_type,
                       amount=r.amount, description=r.description) for r in batch]
         try:

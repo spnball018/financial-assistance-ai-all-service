@@ -136,7 +136,18 @@ Errors: `404` ไม่มี parser สำหรับ source นี้
 1. ตั้ง `merchant_key` จาก `merchant_raw` (ตัดวงเล็บ, ตัวเลขสาขา/รหัส, เครื่องหมาย, คำนำหน้าชื่อ แล้วทำเป็นตัวพิมพ์เล็ก)
 2. **Merchant Memory**: ถ้า `merchant_key` ตรงกับที่ผู้ใช้เคย confirm จะได้ `category_source='memory'`
 3. **AI** (Gemini): ส่งทีละไม่เกิน 25 รายการ ถ้า confidence ≥ `AI_CONFIDENCE_THRESHOLD` (ค่าเริ่มต้น 0.7) และเป็นหมวด leaf ที่มีอยู่จริง จะได้หมวดนั้น ไม่งั้นได้ "Uncategorized" ทั้งสองกรณีเป็น `category_source='ai'` และเก็บ `ai_confidence`, `ai_reason`
-4. ถ้าไม่ได้ตั้ง AI ไว้ (ไม่มี `GEMINI_API_KEY` และไม่ได้เปิด Vertex) หรือ AI ล้ม รายการจะคงเป็น `none` และถูกลองใหม่ในการเรียกครั้งถัดไป
+4. ถ้าไม่ได้ตั้ง AI ไว้ หรือ AI ล้ม รายการจะคงเป็น `none` และถูกลองใหม่ในการเรียกครั้งถัดไป
+
+**เลือก AI adapter ด้วย env `CATEGORIZER`** (ตั้งใน `expense-api/.env`)
+
+| ค่า | ใช้อะไร | env ที่ต้องมี |
+|---|---|---|
+| `gemini` | Gemini API ด้วย API key | `GEMINI_API_KEY` |
+| `vertex` | Gemini บน Google Vertex AI คิดเงินกับ GCP project | `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION` (ค่าเริ่มต้น `global`) และ Application Default Credentials |
+| `none` | ไม่ใช้ AI (ใช้แค่ Merchant Memory) | |
+| ไม่ตั้ง | `gemini` ถ้ามี `GEMINI_API_KEY` ไม่งั้น `none` | |
+
+ทุก adapter ใช้ prompt เดียวกัน (`build_prompt`) และรุ่นจาก `GEMINI_MODEL` ส่วน `CATEGORIZE_BATCH_SIZE` (ค่าเริ่มต้น 25) คือจำนวนรายการต่อการเรียก 1 ครั้ง ถ้าตั้งค่า adapter ผิด `POST /categorize` จะตอบ `500` พร้อมชื่อ env ที่ขาด ส่วน `POST /sync` ยังทำงานตามปกติ แค่ key `categorize` จะเป็น error
 
 Response
 ```json

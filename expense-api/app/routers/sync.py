@@ -3,7 +3,7 @@ import os
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.db import get_engine
-from app.routers.categorize import get_classifier
+from categorize.ai import classifier_from_env
 from categorize.service import categorize_pending
 from sync import engine as sync_engine
 from sync import repo
@@ -17,7 +17,7 @@ def get_mail_client() -> MailClient:
 
 
 @router.post("")
-def run_sync(mail: MailClient = Depends(get_mail_client), classifier=Depends(get_classifier)):
+def run_sync(mail: MailClient = Depends(get_mail_client)):
     """Pull new emails for every active source, add pending transactions, then categorize them.
     Can take minutes on the first run (3 months of mail)."""
     try:
@@ -25,7 +25,8 @@ def run_sync(mail: MailClient = Depends(get_mail_client), classifier=Depends(get
     except sync_engine.SyncBusy:
         raise HTTPException(status_code=409, detail="A sync is already running")
     try:
-        categorized = categorize_pending(get_engine(), classifier)
+        # built here, not as a dependency: a misconfigured categorizer must not block the sync
+        categorized = categorize_pending(get_engine(), classifier_from_env())
     except Exception as e:  # the sync itself succeeded; categorizing can be re-run via POST /categorize
         categorized = {"error": type(e).__name__}
     return {"run_id": result.run_id, "counts": result.counts, "categorize": categorized}
