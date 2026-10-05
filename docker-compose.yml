@@ -56,7 +56,7 @@ services:
       context: ./credit-card-statement-service
     container_name: financial-ai-credit-card-statement
     ports:
-      - "8001:8000"
+      - "8003:8000"
     environment:
       - PYTHONUNBUFFERED=1
     networks:

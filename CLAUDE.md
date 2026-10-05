@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 The top-level orchestration repo for the Financial Assistance AI project. It holds almost no application code. Its job is to wire separate services together in `docker-compose.yml` on a shared `financial-ai` bridge network:
 
 - **`gmail-service/`** (git submodule, FastAPI, host port 8000): queries Gmail by label, date and text. Needs Google OAuth (`credentials.json` + `token.json`).
-- **`credit-card-statement-service/`** (lives in this repo, not a submodule; FastAPI, host port **8001** → container port 8000): `POST /upload-statement/` parses an uploaded CSV with `Date`, `Description` and `Amount` columns into transactions.
+- **`credit-card-statement-service/`** (lives in this repo, not a submodule; FastAPI, host port **8003** → container port 8000): `POST /upload-statement/` parses an uploaded CSV with `Date`, `Description` and `Amount` columns into transactions.
 - **`langgraph/`** (git submodule): the LangGraph AI assistant. It calls the tool services over HTTP using container-name URLs (`GMAIL_SERVICE_URL`, `CREDIT_CARD_STATEMENT_SERVICE_URL`) and persists to Postgres (`DATABASE_URL`). It has two entry points: `chatbot.py` (interactive) and `main.py` (batch). Both read secrets from `langgraph/.env`.
 - **`postgres`** (postgres:16-alpine, port 5432, user/password `postgres`/`postgres`, database `financial`).
 

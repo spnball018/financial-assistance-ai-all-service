@@ -166,7 +166,7 @@ expense-api/
 ## Verification
 
 - `pytest` ใน `expense-api` ผ่าน และเทสต์ของ main track ต้องไม่พัง
-- `curl -F file=@<pdf> -F password=<pw> localhost:8001/parse-ktc-pdf` ได้ JSON โดย `previous_balance` + ผลรวม `amount` ของ `lines` ทั้งหมด (ทุก type รวม payment/refund ที่ติดลบ) ต้องเท่ากับ `total_new_balance` ซึ่ง endpoint ตรวจเองและคืน 422 ถ้าไม่ตรง (ข้อความเดิมที่ให้รวมเฉพาะ purchase/fee/interest ไม่ตรงกับหน้า PDF จริงที่มียอดยกมาและยอดชำระ)
+- `curl -F file=@<pdf> -F password=<pw> localhost:8003/parse-ktc-pdf` ได้ JSON โดย `previous_balance` + ผลรวม `amount` ของ `lines` ทั้งหมด (ทุก type รวม payment/refund ที่ติดลบ) ต้องเท่ากับ `total_new_balance` ซึ่ง endpoint ตรวจเองและคืน 422 ถ้าไม่ตรง (ข้อความเดิมที่ให้รวมเฉพาะ purchase/fee/interest ไม่ตรงกับหน้า PDF จริงที่มียอดยกมาและยอดชำระ)
 - เทสต์ของ K1: `cd credit-card-statement-service && pytest` (ต้องมี `pip install -r requirements.txt -r requirements-dev.txt`)
 - ในทุก log ต้องไม่มีรหัสผ่านหรือเนื้อหา PDF
 
