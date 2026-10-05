@@ -10,6 +10,31 @@
 
 ทุกแถวมี `status=pending` เพื่อให้ผู้ใช้ตรวจก่อน confirm
 
+## โครงสร้าง expense-api
+
+```
+expense-api/
+├── app/                 # ชั้น HTTP
+│   ├── main.py          # main track (include_router(ktc.router) ไว้แล้ว)
+│   ├── db.py            # main track: get_engine()
+│   ├── secrets.py       # main track: Fernet + get/set ledger.settings  ← K3 ใช้ตัวนี้
+│   └── routers/
+│       ├── ktc.py       # KTC track
+│       └── sync.py      # main track (กำลังจะสร้าง)
+├── sync/                # main track: engine, repo (ตัวเดียวที่เขียน DB), gmail client
+├── sources/             # adapter ต่อแหล่ง: RawEmail → TxnNode ไม่แตะ DB
+│   ├── base.py          # main track: contract
+│   ├── kbank.py         # main track
+│   └── ktc.py           # KTC track
+├── parsers/             # แกะข้อความล้วนๆ ไม่รู้จัก ledger (main track: kbank.py)
+└── tests/
+```
+
+- **ทิศทาง import**: `app/routers` → `sync` → `sources` → `parsers` ชั้นล่างห้าม import ชั้นบน ข้อยกเว้นเดียวคือ `app/routers/ktc.py` ใช้ `app.secrets` ได้
+- `sources/ktc.py` ห้าม import `app.*` หรือ `sync.*` ให้ใช้แค่ `sources.base` กับ `ParseContext` ที่ engine ส่งมา
+- **อย่าย้ายโฟลเดอร์**: ตอนนี้ `sync/`, `sources/` และ `parsers/` อยู่นอก `app/` อาจจัดใหม่หลัง merge KTC track ซึ่ง main track จะเป็นคนทำ
+- ถ้าเป็น logic แกะ PDF/ตารางที่ไม่เกี่ยวกับ ledger ให้วางใน `credit-card-statement-service/` ไม่ใช่ `parsers/`
+
 ## ขอบเขตไฟล์ (สำคัญ: กันชนกับ main track)
 
 **แก้ได้ (เป็นของ KTC track)**
@@ -22,7 +47,7 @@
 
 **ห้ามแก้ (เป็นของ main track)** ถ้าจำเป็นต้องเปลี่ยน ให้หยุดแล้วถามผู้ใช้
 - `expense-api/sources/base.py` (contract)
-- `expense-api/app/main.py`, `expense-api/app/db.py`, `expense-api/sync/`
+- `expense-api/app/main.py`, `expense-api/app/db.py`, `expense-api/app/secrets.py`, `expense-api/sync/`, `expense-api/sources/kbank.py`, `expense-api/parsers/`
 - `expense-api/alembic/` ห้ามเพิ่ม migration เพราะ revision chain จะแตกเป็นหลาย head schema ที่ต้องใช้มีครบแล้ว (ดูหัวข้อ Schema ที่มีอยู่)
 - `docker-compose.yml`: ถ้าต้องเพิ่ม env หรือ depends_on ให้แจ้งผู้ใช้
 - `docs/expense-tracker-plan.md`, `gmail-service/`
@@ -37,6 +62,11 @@
 - คืน `TxnNode` ที่เป็น root (`statement`) พร้อม `children` (`statement_line`)
 - อีเมลที่ไม่มี PDF statement (เช่น โฆษณา หรือแจ้งเตือนอื่น) ให้คืน `status="skipped"`
 - sync engine ฝั่ง main track ยังไม่ได้เขียน ระหว่างนี้ให้ทดสอบ `parse()` ตรงๆ ด้วย `RawEmail`/`ParseContext` ที่สร้างในเทสต์
+
+## ก่อนเริ่มและระหว่างทำ
+
+- main track ยังทำงานบน `main` อยู่ ก่อนเริ่มแต่ละงานให้ `git merge main` เข้า `ktc-track` เพื่อได้ contract และเอกสารล่าสุด (เช่น `docs/sync-engine.md`)
+- ถ้า merge แล้วชนในไฟล์ของ main track ให้ใช้ฝั่ง `main` เสมอ
 
 ## งาน
 
@@ -56,9 +86,10 @@
 - แปลงผลลัพธ์เป็นต้นไม้ตามกติกาในหัวข้อถัดไป
 
 **K3. `expense-api/app/routers/ktc.py`: `PUT /settings/ktc-password`**
-- body `{ "password": "..." }` แล้วเข้ารหัสด้วย Fernet (key จาก env `SECRET_KEY`) บันทึกใน `ledger.settings` key `ktc_pdf_password` แบบ upsert
-- ห้ามมี endpoint ที่คืนรหัสผ่านออกไป ถ้าต้องให้ UI รู้สถานะ ทำได้แค่ `GET /settings/ktc-password/status` ที่คืน `{ "is_set": bool, "updated_at": ... }`
-- ใช้ `get_engine()` จาก `app.db` ได้ แต่ห้ามแก้ไฟล์นั้น
+- body `{ "password": "..." }` แล้วเรียก `app.secrets.set_setting("ktc_pdf_password", password)`
+- **ห้ามเขียนการเข้ารหัสเอง**: `app/secrets.py` (ของ main track) มี Fernet ด้วย env `SECRET_KEY` อยู่แล้ว ได้แก่ `set_setting`, `get_setting` และ `setting_updated_at`
+- ห้ามมี endpoint ที่คืนรหัสผ่านออกไป ถ้า UI ต้องรู้สถานะ ทำได้แค่ `GET /settings/ktc-password/status` คืน `{ "is_set": bool, "updated_at": ... }` จาก `setting_updated_at`
+- ถ้า `SECRET_KEY` ไม่ได้ตั้ง `app.secrets` จะ raise `RuntimeError` ให้แปลงเป็น HTTP 500 ที่ไม่มีค่ารหัสผ่านในข้อความ
 
 **K4. เทสต์และ fixture**
 - เก็บ PDF จริงไว้ที่ `expense-api/tests/fixtures/ktc_*.pdf` (gitignore อยู่แล้ว) รหัสผ่านให้อ่านจาก env ในเทสต์ ห้าม hardcode

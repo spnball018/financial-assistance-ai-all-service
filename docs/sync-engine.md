@@ -78,7 +78,7 @@ FakeMailClient (test)  sources/ktc.py   ─→ credit-card-statement-service  (K
 
 | ขั้น | งาน | ทดสอบได้ตอนนี้ไหม |
 |---|---|---|
-| 1 | `app/secrets.py` + แก้ ktc-track.md ข้อ K3 | ได้ |
+| 1 | `app/secrets.py` + แก้ ktc-track.md ข้อ K3 | **เสร็จ** (เทสต์ 3 ข้อ) |
 | 2 | `sources/__init__.py` (registry) + `sources/kbank.py` | ได้ (fixture KBank) |
 | 3 | `sync/gmail_client.py` (Protocol, ตัวจริง, ตัวปลอม) | ได้ (gmail-service บน venv) |
 | 4 | `sync/repo.py` + `sync/engine.py` | ต้องมี Postgres |
