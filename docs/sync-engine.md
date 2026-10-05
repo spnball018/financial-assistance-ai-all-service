@@ -6,12 +6,12 @@
 
 | # | ส่วน | สถานะ | สิ่งที่มีอยู่แล้ว |
 |---|---|---|---|
-| 1 | ดึงอีเมล (client) | ยังไม่ทำ | ฝั่ง gmail-service มี endpoint ครบและทดสอบแล้ว (T1.1) |
-| 2 | Engine | ยังไม่ทำ | ตาราง `raw_emails`, `sync_runs`, `transactions` มีใน migration แต่ยังไม่เคยรันจริง |
-| 3 | KBank ต่อเข้า contract | ครึ่งหนึ่ง | มี parser `parsers/kbank.py` ที่ทดสอบแล้ว และ contract `sources/base.py` แต่ยังไม่ได้ต่อกัน |
-| 4 | API `/sync` | ยังไม่ทำ | |
-| 5 | เทสต์ | ยังไม่ทำ | มีแค่เทสต์ของ parser |
-| 6 | Verification | ยังไม่ทำ | รอ migration ผ่าน |
+| 1 | ดึงอีเมล (client) | เสร็จ | ฝั่ง gmail-service มี endpoint ครบและทดสอบแล้ว (T1.1) |
+| 2 | Engine | เสร็จ | ตาราง `raw_emails`, `sync_runs`, `transactions` มีใน migration แต่ยังไม่เคยรันจริง |
+| 3 | KBank ต่อเข้า contract | เสร็จ | มี parser `parsers/kbank.py` ที่ทดสอบแล้ว และ contract `sources/base.py` แต่ยังไม่ได้ต่อกัน |
+| 4 | API `/sync` | เสร็จ | `/sync`, `/sync/reparse`, `/sync/runs` |
+| 5 | เทสต์ | เสร็จ | มีแค่เทสต์ของ parser |
+| 6 | Verification | เสร็จบน DB ทดสอบ | ยังไม่ได้รันกับ DB จริง `financial` (ต้อง rebuild container) |
 
 ## การแบ่ง adapter
 
@@ -79,16 +79,33 @@ FakeMailClient (test)  sources/ktc.py   ─→ credit-card-statement-service  (K
 | ขั้น | งาน | ทดสอบได้ตอนนี้ไหม |
 |---|---|---|
 | 1 | `app/secrets.py` + แก้ ktc-track.md ข้อ K3 | **เสร็จ** (เทสต์ 3 ข้อ) |
-| 2 | `sources/__init__.py` (registry) + `sources/kbank.py` | ได้ (fixture KBank) |
-| 3 | `sync/gmail_client.py` (Protocol, ตัวจริง, ตัวปลอม) | ได้ (gmail-service บน venv) |
-| 4 | `sync/repo.py` + `sync/engine.py` | ต้องมี Postgres |
-| 5 | `app/routers/sync.py` | ต้องมี Postgres |
-| 6 | เทสต์ engine (rerun ได้ใหม่ 0, ต้นไม้ถูก) + `curl -X POST localhost:8002/sync` สองครั้ง | ต้องมี Postgres |
+| 2 | `sources/__init__.py` (registry) + `sources/kbank.py` | **เสร็จ** |
+| 3 | `sync/gmail_client.py` (Protocol, ตัวจริง, ตัวปลอม) | **เสร็จ** |
+| 4 | `sync/repo.py` + `sync/engine.py` | **เสร็จ** |
+| 5 | `app/routers/sync.py` | **เสร็จ** |
+| 6 | เทสต์ engine + `curl -X POST /sync` สองครั้ง | **เสร็จบน DB ทดสอบ** |
 
 เทสต์ที่ต้องใช้ Postgres ให้ skip เองเมื่อไม่มี `DATABASE_URL`
 
-## รอคำตอบจากผู้ใช้
+## เทสต์
 
-- ผลการรัน migration 0001–0003
-- ค่าธรรมเนียม: รวมเข้ายอด หรือแยกเป็น `adjustment`
-- Top-up: ข้ามไปก่อนได้ไหม
+- เทสต์ที่ใช้ DB ต้องตั้ง `TEST_DATABASE_URL` เช่น `postgresql://postgres:postgres@localhost:5432/financial_test` ชื่อ DB ต้องมีคำว่า `test` ไม่งั้นเทสต์ปฏิเสธ เพราะเทสต์ truncate ตาราง ledger conftest รัน `alembic upgrade head` ให้เอง ถ้าไม่ตั้งค่า เทสต์กลุ่มนี้จะ skip
+- สร้าง DB ครั้งแรก: `CREATE DATABASE financial_test;`
+
+## ผล verification (2026-10-05, Gmail จริง → `financial_test`)
+
+- `POST /sync` รอบแรก: ดึง 152 ฉบับ (ย้อนหลัง 90 วัน) ได้ 152 รายการ `pending` ใช้เวลาราว 3 นาที (gmail-service ดึงทีละฉบับ) ไม่มี failed
+- รอบสอง: ดึง 0, ใหม่ 0 ใช้เวลา 0.4 วินาที และ `/sync/reparse` ได้ duplicate 152 ใหม่ 0
+- ทุกแถวมี `raw_email_id` แยกตามช่องทาง: bill_payment 115, promptpay 18, transfer 17, donation 2
+- ไม่พบบิล KTC ในช่วง 90 วัน (อีเมลบิล KTC ที่เจอก่อนหน้าเก่ากว่านั้น) การตั้ง flag `ktc_bill_payment` ทดสอบด้วยอีเมลที่ดัดแปลงในเทสต์แทน
+- ยังไม่ได้รันกับ DB จริง `financial` และ container `expense-api` ยังเป็นรุ่นเก่า ต้อง `docker compose up -d --build expense-api`
+
+## ตัดสินใจแล้ว (ใช้ค่าที่แนะนำ)
+
+- ค่าธรรมเนียม: รวมเข้ายอดรายจ่าย
+- Top-up: ข้ามไปก่อน (`skipped`) เก็บอีเมลไว้ใน `raw_emails` ใช้ `/sync/reparse` ภายหลังได้
+
+## ที่ยังเปิดอยู่
+
+- ผู้ใช้ยืนยันค่าที่เลือกไว้ข้างบน (ค่าธรรมเนียม, Top-up)
+- sync รอบแรกช้า (ดึงทีละฉบับ) อาจต้องทำเป็น background job พร้อม progress ใน UI (T4)
