@@ -1,6 +1,8 @@
+import os
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel
 from sqlalchemy import text
 
@@ -11,6 +13,11 @@ app = FastAPI(
     title="Expense API",
     description="Sync, reconcile, categorize and manage expense transactions.",
 )
+
+# No auth yet and the data is personal finance: refuse requests whose Host is not ours, so a web page
+# that DNS-rebinds its own domain to 127.0.0.1 cannot read this API from the user's browser.
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=[
+    h.strip() for h in os.environ.get("ALLOWED_HOSTS", "localhost,127.0.0.1,expense-api,testserver").split(",") if h.strip()])
 
 app.include_router(accounts.router)
 app.include_router(ktc.router)
