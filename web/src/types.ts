@@ -35,11 +35,21 @@ export interface Category {
   sort_order: number;
 }
 
+export type AccountType = "bank" | "credit_card" | "ewallet" | "cash" | "investment";
+
 export interface Account {
   id: number;
   name: string;
-  type: string;
+  type: AccountType;
+  institution: string | null;
+  masked_ref: string | null;
+  currency: string;
+  is_active: boolean;
+  purpose: string | null;
+  sort_order: number;
 }
+
+export type AccountInput = Pick<Account, "name" | "type" | "institution" | "masked_ref" | "purpose">;
 
 export interface SummaryGroup {
   category_id: number;

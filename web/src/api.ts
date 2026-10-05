@@ -1,4 +1,4 @@
-import type { Account, Category, ConfirmResult, Status, Summary, SyncResult, Txn } from "./types";
+import type { Account, AccountInput, Category, ConfirmResult, Status, Summary, SyncResult, Txn } from "./types";
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -27,6 +27,9 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   categories: () => call<Category[]>("/categories"),
   accounts: () => call<Account[]>("/accounts"),
+  createAccount: (body: AccountInput) => call<Account>("/accounts", { method: "POST", body: JSON.stringify(body) }),
+  updateAccount: (id: number, body: Partial<Account>) =>
+    call<Account>(`/accounts/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   transactions: (params: { status?: Status; month?: string; limit?: number; offset?: number }) => {
     const q = new URLSearchParams();
     Object.entries(params).forEach(([k, v]) => v !== undefined && v !== "" && q.set(k, String(v)));

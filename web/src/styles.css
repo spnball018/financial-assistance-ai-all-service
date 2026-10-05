@@ -95,6 +95,17 @@ tr.child-row td { background: var(--bg); }
 .bar-fill { height: 100%; background: var(--accent); }
 .subs { list-style: none; padding: 0; margin: 8px 0 0; display: grid; gap: 4px; font-size: 13px; }
 .subs li { display: flex; justify-content: space-between; gap: 8px; }
+h2 { font-size: 16px; margin: 8px 0; }
+code { font-size: 12px; background: var(--bg); padding: 0 4px; border-radius: 4px; }
+table.settings input:not([type="checkbox"]), table.settings select {
+  font: inherit; width: 100%; min-width: 80px; padding: 4px 6px; border: 1px solid var(--border);
+  border-radius: 6px; background: var(--surface); color: var(--text);
+}
+table.settings .s-name { min-width: 170px; }
+table.settings .s-purpose { min-width: 200px; }
+table.settings tr.inactive td { opacity: 0.55; }
+table.settings tr.new-row td { background: var(--bg); }
+.error-text { color: var(--error); }
 @media (max-width: 640px) {
   .app { padding: 12px; }
   /* rows become cards: merchant + amount on top, date, then category and actions */
@@ -116,4 +127,12 @@ tr.child-row td { background: var(--bg); }
   .c-act { grid-area: act; text-align: right; }
   .category-select { max-width: 100%; width: 100%; }
   td.empty { grid-column: 1 / -1; }
+  /* settings rows: stack the fields */
+  table.settings tbody tr {
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas: "name name" "type inst" "ref active" "purpose purpose" "save save";
+  }
+  .s-name { grid-area: name; } .s-type { grid-area: type; } .s-inst { grid-area: inst; }
+  .s-ref { grid-area: ref; } .s-purpose { grid-area: purpose; } .s-active { grid-area: active; }
+  .s-save { grid-area: save; }
 }

@@ -25,18 +25,29 @@
 
 ### ข้อมูลอ้างอิง
 
-#### ✅ `GET /accounts`
-บัญชีทั้งหมดใน ledger
+#### ✅ `GET /accounts?include_inactive=true`
+บัญชีทั้งหมด เรียงตาม `sort_order` (ส่ง `include_inactive=false` เพื่อเอาเฉพาะที่ใช้งาน)
 
 ```json
 [
-  {"id": 1, "name": "KBank ออมทรัพย์", "type": "bank", "institution": "KBank",
-   "masked_ref": null, "currency": "THB", "is_active": true},
-  {"id": 2, "name": "บัตรเครดิต KTC", "type": "credit_card", "institution": "KTC",
-   "masked_ref": null, "currency": "THB", "is_active": true}
+  {"id": 1, "name": "KBank ใช้จ่าย", "type": "bank", "institution": "KBank", "masked_ref": "x5204",
+   "currency": "THB", "is_active": true, "purpose": "บัญชีจ่ายประจำ ได้อีเมลแจ้งรายการจาก K PLUS", "sort_order": 1}
 ]
 ```
-`type`: `bank | credit_card | ewallet | cash`
+`type`: `bank | credit_card | ewallet | cash | investment`
+
+#### ✅ `POST /accounts`
+```json
+{"name": "กองทุน SSF", "type": "investment", "institution": "KAsset", "masked_ref": null, "purpose": null}
+```
+Response `201` · `409` ชื่อซ้ำ · `422` ข้อมูลผิด
+
+`masked_ref` คือเลขท้ายบัญชี / wallet ID / พร้อมเพย์ อย่างน้อย 4 ตัวเลข (เช่น `7722`, `x5204`) ใช้จับคู่ว่าการโอนออกจาก KBank เข้าบัญชีไหนของผู้ใช้ (T6.2) **ห้ามเก็บเลขบัญชีเต็ม**
+
+#### ✅ `PATCH /accounts/{id}`
+แก้เฉพาะฟิลด์ที่ส่งมา (`name`, `type`, `institution`, `masked_ref`, `purpose`, `is_active`, `sort_order`) ส่ง `masked_ref: ""` เพื่อลบ บัญชีลบไม่ได้เพราะมีรายการอ้างถึง ให้ตั้ง `is_active: false` แทน
+
+Errors: `404` · `409` ชื่อซ้ำ · `422`
 
 #### ✅ `GET /categories`
 หมวดหมู่แบบ flat เรียงให้หมวดแม่มาก่อนหมวดลูกของตัวเอง UI สร้าง tree จาก `parent_id`

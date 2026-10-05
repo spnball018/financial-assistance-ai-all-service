@@ -5,26 +5,18 @@ from pydantic import BaseModel
 from sqlalchemy import text
 
 from app.db import get_engine
-from app.routers import categorize, ktc, sync, transactions
+from app.routers import accounts, categorize, ktc, sync, transactions
 
 app = FastAPI(
     title="Expense API",
     description="Sync, reconcile, categorize and manage expense transactions.",
 )
 
+app.include_router(accounts.router)
 app.include_router(ktc.router)
 app.include_router(sync.router)
 app.include_router(categorize.router)
 app.include_router(transactions.router)
-
-
-@app.get("/accounts")
-def list_accounts():
-    with get_engine().connect() as conn:
-        rows = conn.execute(text(
-            "SELECT id, name, type, institution, masked_ref, currency, is_active "
-            "FROM ledger.accounts ORDER BY id"))
-        return [dict(r._mapping) for r in rows]
 
 
 @app.get("/categories")
