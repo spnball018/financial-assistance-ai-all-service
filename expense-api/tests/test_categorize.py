@@ -258,3 +258,13 @@ def test_gemini_does_not_retry_404_and_gives_up_eventually():
     with pytest.raises(errors.ServerError):
         GeminiClassifier(client, model="m", retries=3, backoff=0).classify(ITEMS, CATS)
     assert len(calls) == 3
+
+
+def test_donation_category_is_offered_to_ai_and_uncategorized_stays_last(cdb):
+    from categorize.service import _leaf_categories
+    with cdb.connect() as conn:
+        cats, unc = _leaf_categories(conn)
+        order = conn.execute(text("SELECT name_en FROM ledger.categories WHERE parent_id IS NULL "
+                                  "ORDER BY sort_order")).scalars().all()
+    assert any(c.path.startswith("Donations & Merit-making / บริจาค/ทำบุญ") for c in cats)
+    assert order[-2:] == ["Donations & Merit-making", "Uncategorized"]

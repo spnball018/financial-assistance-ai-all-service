@@ -34,7 +34,7 @@ PRD ต้องการให้ผู้ใช้กด Refresh แล้ว�
 - **accounts**: id, name, type (`bank|credit_card|ewallet|cash`), institution, masked_ref, currency, is_active
   - seed ไว้ 2 รายการ: KBank ออมทรัพย์ และบัตร KTC
 - **categories**: id, parent_id, name_th, name_en, kind (`expense|income`), sort_order
-  - seed หมวดหลัก 7 หมวดพร้อมหมวดย่อยตาม PRD
+  - seed หมวดหลัก 7 หมวดพร้อมหมวดย่อยตาม PRD และเพิ่ม "บริจาค/ทำบุญ" ใน migration 0004 (ผู้ใช้บริจาคทุกเดือน) วาง Uncategorized ไว้ท้ายสุดเสมอ
 - **transactions**: เก็บเป็นต้นไม้ในตารางเดียว
   - ลำดับชั้นและการผูกบัญชี:
     - `id`, `account_id`, `parent_id` (FK ไปที่ตัวเอง)
