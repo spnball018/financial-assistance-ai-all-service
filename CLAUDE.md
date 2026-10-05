@@ -31,9 +31,23 @@ docker compose up -d --build <service>
 docker compose logs -f <service>
 ```
 
+Local development of the expense tracker (Postgres in docker, the rest from local venvs / Node):
+
+```bash
+docker compose up -d postgres
+(cd gmail-service && .venv/bin/uvicorn main:app --port 8000)
+(cd expense-api && DATABASE_URL=postgresql://postgres:postgres@localhost:5432/financial \
+   GMAIL_SERVICE_URL=http://localhost:8000 .venv/bin/uvicorn app.main:app --port 8002 --env-file .env)
+(cd web && npm install && npm run dev)          # http://localhost:3000, proxies /api -> :8002
+# expense-api tests (DB tests need a database whose name contains "test")
+(cd expense-api && TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/financial_test .venv/bin/python -m pytest)
+```
+
+Design docs live in `docs/`: `expense-tracker-plan.md` (plan + status), `sync-engine.md`, `api-spec.md`, `ktc-track.md`.
+
 `credentials.json` must be in the repo root, next to `docker-compose.yml`. It and `token.json` are gitignored. Each FastAPI service serves Swagger at `/docs`, and the healthchecks call that same URL.
 
-This repo has no test suite, linter or build step. You verify changes by running the containers.
+`expense-api` has a pytest suite; `web` type-checks and builds with `npm run build`. The other services are verified by running them.
 
 ## Known README inaccuracies
 

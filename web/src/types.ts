@@ -1,0 +1,71 @@
+export type Status = "pending" | "confirmed" | "ignored";
+export type CategorySource = "none" | "memory" | "ai" | "user" | "manual";
+
+export interface Txn {
+  id: number;
+  parent_id: number | null;
+  account_id: number;
+  node_type: string;
+  kind: "expense" | "income" | "transfer";
+  status: Status;
+  needs_review: boolean;
+  amount: number;
+  currency: string;
+  occurred_at: string;
+  has_time: boolean;
+  source: string;
+  channel: string | null;
+  merchant_raw: string | null;
+  merchant_key: string | null;
+  description: string | null;
+  category_id: number | null;
+  category_source: CategorySource;
+  ai_confidence: number | null;
+  ai_reason: string | null;
+  confirmed_at: string | null;
+  children: Txn[];
+}
+
+export interface Category {
+  id: number;
+  parent_id: number | null;
+  name_th: string;
+  name_en: string;
+  kind: string;
+  sort_order: number;
+}
+
+export interface Account {
+  id: number;
+  name: string;
+  type: string;
+}
+
+export interface SummaryGroup {
+  category_id: number;
+  name_th: string;
+  name_en: string;
+  count: number;
+  amount: number;
+  subcategories: Omit<SummaryGroup, "subcategories">[];
+}
+
+export interface Summary {
+  month: string;
+  total: number;
+  count: number;
+  pending_not_counted: number;
+  categories: SummaryGroup[];
+}
+
+export interface ConfirmResult {
+  confirmed: number;
+  remembered: number;
+  applied_to_pending: number;
+}
+
+export interface SyncResult {
+  run_id: number;
+  counts: Record<string, { fetched: number; new: number; duplicate: number; skipped: number; failed: number; error?: string }>;
+  categorize?: { memory?: number; ai?: number; uncategorized?: number; left?: number; error?: string };
+}

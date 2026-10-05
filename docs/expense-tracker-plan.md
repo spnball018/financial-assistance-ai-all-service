@@ -83,6 +83,7 @@ PRD ต้องการให้ผู้ใช้กด Refresh แล้ว�
 | T3.2 AI categorizer | adapter `gemini` / `vertex` / `none` เลือกด้วย env `CATEGORIZER` (registry `ADAPTERS` ใน `categorize/ai.py`) ลองกับ Google AI Studio (free tier) แล้ว: 152 รายการ ได้หมวด 79, Uncategorized 73 ใช้เวลา 27 วินาที |
 | T3.3 threshold → Uncategorized | เสร็จ |
 | T4.1 API | เสร็จ (`ledger/transactions.py`, `ledger/reports.py`, `app/routers/transactions.py`) ทดสอบกับ DB ทดสอบ และลองอ่านกับ DB จริงแล้ว |
+| T4.2 web | หน้า ตรวจรายการ (Review Queue) และ สรุปรายเดือน เสร็จ (`web/`, React 19 + Vite 8, dev server พอร์ต 3000 proxy `/api` → expense-api) ยังไม่มีหน้า Manual Entry / Settings และยังไม่ได้ใส่ใน docker compose |
 | T3.4 feedback loop | เสร็จ: confirm และการแก้หมวดรายการที่ confirm แล้วจะบันทึก memory และใช้กับรายการ pending ร้านเดียวกันทันที |
 | T0.1 fixture Shopee / Lazada | ยังไม่มี (รอชื่อ label) |
 | KTC (T1.5) | แยกไป [ktc-track.md](ktc-track.md) label: `financial-ktc-[card]` (ชื่อจริง) |
