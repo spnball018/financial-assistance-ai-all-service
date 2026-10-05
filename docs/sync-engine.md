@@ -11,7 +11,7 @@
 | 3 | KBank ต่อเข้า contract | เสร็จ | มี parser `parsers/kbank.py` ที่ทดสอบแล้ว และ contract `sources/base.py` แต่ยังไม่ได้ต่อกัน |
 | 4 | API `/sync` | เสร็จ | `/sync`, `/sync/reparse`, `/sync/runs` |
 | 5 | เทสต์ | เสร็จ | มีแค่เทสต์ของ parser |
-| 6 | Verification | เสร็จบน DB ทดสอบ | ยังไม่ได้รันกับ DB จริง `financial` (ต้อง rebuild container) |
+| 6 | Verification | เสร็จ | ทั้ง DB ทดสอบและ DB จริง `financial` |
 
 ## การแบ่ง adapter
 
@@ -98,7 +98,10 @@ FakeMailClient (test)  sources/ktc.py   ─→ credit-card-statement-service  (K
 - รอบสอง: ดึง 0, ใหม่ 0 ใช้เวลา 0.4 วินาที และ `/sync/reparse` ได้ duplicate 152 ใหม่ 0
 - ทุกแถวมี `raw_email_id` แยกตามช่องทาง: bill_payment 115, promptpay 18, transfer 17, donation 2
 - ไม่พบบิล KTC ในช่วง 90 วัน (อีเมลบิล KTC ที่เจอก่อนหน้าเก่ากว่านั้น) การตั้ง flag `ktc_bill_payment` ทดสอบด้วยอีเมลที่ดัดแปลงในเทสต์แทน
-- ยังไม่ได้รันกับ DB จริง `financial` และ container `expense-api` ยังเป็นรุ่นเก่า ต้อง `docker compose up -d --build expense-api`
+
+**DB จริง `financial`** (Postgres ใน docker, gmail-service และ expense-api รันจาก venv): รอบแรกได้ 152 รายการ `pending` (ราว 2 นาที) รอบสองได้ใหม่ 0 ทุกแถวมี `raw_email_id` และ `merchant_raw` ตาราง `public.transactions` เดิมถูก drop แล้ว
+
+**ปัญหาที่เจอ**: ถ้ารัน `gmail-auth`/`gmail-service` ใน docker แล้ว `token.json` จะเป็นของ root เมื่อ token หมดอายุ gmail-service ที่รันจาก venv จะเขียนทับไม่ได้และตอบ 500 (`Permission denied: 'token.json'`) แก้ด้วย `sudo chown $USER token.json`
 
 ## ตัดสินใจแล้ว (ใช้ค่าที่แนะนำ)
 
