@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, ApiError, AUTH_REQUIRED } from "./api";
+import { GmailBanner } from "./AccessSettings";
 import { LoginPage } from "./LoginPage";
 import { BalancesPage } from "./BalancesPage";
 import { ManualEntryPage } from "./ManualEntryPage";
@@ -96,6 +97,7 @@ function SignedIn({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
         </div>
       </header>
       {error && <div className="message error">{error}</div>}
+      {me.auth_mode === "google" && <GmailBanner page={page} />}
       <main>
         {page === "review" && <ReviewPage categories={categories} accounts={accounts} />}
         {page === "manual" && <ManualEntryPage categories={categories} accounts={accounts} />}

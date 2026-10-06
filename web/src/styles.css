@@ -204,3 +204,5 @@ a.button.primary { background: var(--accent); border-color: var(--accent); color
 .token-once { align-items: flex-start; }
 .token-value { display: block; margin-top: 6px; word-break: break-all; user-select: all; }
 .token-actions { display: flex; gap: 8px; align-items: center; }
+.message.warn { background: var(--warn-bg); color: var(--warn); align-items: center; }
+.gmail-banner a.button { white-space: nowrap; }

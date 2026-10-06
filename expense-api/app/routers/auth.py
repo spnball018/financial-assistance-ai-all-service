@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 
-from app import auth, google_oauth, secrets
+from app import auth, gmail_connections, google_oauth, secrets
 from app.auth import Principal, require_session, require_user
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -53,7 +53,12 @@ def login(next: Optional[str] = None):
     state, nonce = pysecrets.token_urlsafe(24), pysecrets.token_urlsafe(24)
     verifier, challenge = google_oauth.new_pkce()
     try:
-        url = google_oauth.authorization_url(_redirect_uri(), state, challenge, nonce=nonce)
+        # one consent for both: who you are, and read-only Gmail for the sync (offline = refresh token).
+        # Google shows the consent screen only until it has been granted once.
+        url = google_oauth.authorization_url(
+            _redirect_uri(), state, challenge, nonce=nonce,
+            scope=f"{google_oauth.SIGN_IN_SCOPE} {gmail_connections.GMAIL_SCOPE}",
+            access_type="offline", include_granted_scopes="true")
         flow = secrets.encrypt(json.dumps({"state": state, "nonce": nonce, "verifier": verifier,
                                            "next": _safe_next(next)}))
     except (google_oauth.OAuthError, RuntimeError) as e:
@@ -77,17 +82,28 @@ def callback(request: Request, code: Optional[str] = None, state: Optional[str] 
         return _fail("state", "state mismatch")
 
     try:
-        claims = google_oauth.exchange_code(code, _redirect_uri(), flow["verifier"])
+        claims, tokens = google_oauth.exchange_code(code, _redirect_uri(), flow["verifier"])
     except google_oauth.OAuthError as e:
         return _fail("failed", str(e))
+
+    def refuse(code_: str, reason: str) -> RedirectResponse:
+        # Google may have just granted us Gmail access for this person: give it back
+        if tokens.get("refresh_token"):
+            google_oauth.revoke(tokens["refresh_token"])
+        return _fail(code_, reason)
+
     if not hmac.compare_digest(str(claims.get("nonce", "")), flow["nonce"]):
-        return _fail("failed", "nonce mismatch")
+        return refuse("failed", "nonce mismatch")
     email = str(claims.get("email", "")).lower()
     if not email or claims.get("email_verified") is not True:
-        return _fail("failed", "email missing or not verified")
+        return refuse("failed", "email missing or not verified")
     user = auth.user_for_sign_in(email, claims.get("name"))
     if user is None:
-        return _fail("not_allowed", f"{email} is not an active user")
+        return refuse("not_allowed", f"{email} is not an active user")
+    try:
+        gmail_connections.save_from_sign_in(user["id"], email, tokens)
+    except RuntimeError:   # SECRET_KEY missing: sign-in still works, Gmail can be connected later
+        log.warning("gmail access from sign-in not stored: SECRET_KEY")
 
     secret, expires = auth.create_session(user["id"], request.headers.get("user-agent"))
     res = _to_ui(flow["next"])

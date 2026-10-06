@@ -48,6 +48,18 @@ def save(uid: int, address: str, refresh_token: str, scopes: str) -> None:
             {"u": uid, "a": address, "t": secrets.encrypt(refresh_token), "s": scopes})
 
 
+def save_from_sign_in(uid: int, address: str, tokens: dict) -> bool:
+    """Sign-in also asks for Gmail (one consent for both). Google returns a refresh token only when the
+    consent screen was shown; keep an existing working connection to another mailbox."""
+    if not tokens.get("refresh_token") or GMAIL_SCOPE not in tokens.get("scope", "").split():
+        return False
+    current = status(uid)
+    if current["connected"] and not current.get("last_error") and current["gmail_address"] != address:
+        return False
+    save(uid, address, tokens["refresh_token"], tokens["scope"])
+    return True
+
+
 def status(uid: int) -> dict:
     """Safe to return over HTTP: never includes the token."""
     with get_engine().connect() as conn:

@@ -36,10 +36,10 @@
 ไม่ต้องยืนยันตัวตน ใช้กับ healthcheck ของ docker → `{"ok": true}`
 
 #### ✅ `GET /auth/login?next=/#settings`
-redirect (303) ไป Google (authorization code + PKCE, scope `openid email profile`) เก็บ state/nonce/verifier ใน cookie `expense_oauth_flow` ที่เข้ารหัสด้วย `SECRET_KEY` อายุ 10 นาที `next` รับเฉพาะ path ในเว็บเดียวกัน
+redirect (303) ไป Google (authorization code + PKCE, scope `openid email profile` **และ `gmail.readonly`** แบบ offline: กด Allow ครั้งเดียวได้ทั้งเข้าระบบและเชื่อม Gmail Google จะแสดงหน้าขอสิทธิ์แค่ครั้งแรก) เก็บ state/nonce/verifier ใน cookie `expense_oauth_flow` ที่เข้ารหัสด้วย `SECRET_KEY` อายุ 10 นาที `next` รับเฉพาะ path ในเว็บเดียวกัน
 
 #### ✅ `GET /auth/callback`
-Google redirect กลับมาที่ `PUBLIC_BASE_URL/api/auth/callback` ตรวจ state, nonce, ลายเซ็น ID token และ `email_verified` แล้วต้องเป็นผู้ใช้ที่เปิดใช้งานอยู่ใน `ledger.users` (หรืออยู่ใน `ADMIN_EMAILS`) สำเร็จ: ตั้ง cookie `expense_session` (HttpOnly, SameSite=Lax, Secure เมื่อ `PUBLIC_BASE_URL` เป็น https) แล้ว redirect ไป `next` ไม่สำเร็จ: redirect ไป `/?login_error=` `not_allowed` | `denied` | `state` | `config` | `failed`
+Google redirect กลับมาที่ `PUBLIC_BASE_URL/api/auth/callback` ตรวจ state, nonce, ลายเซ็น ID token และ `email_verified` แล้วต้องเป็นผู้ใช้ที่เปิดใช้งานอยู่ใน `ledger.users` (หรืออยู่ใน `ADMIN_EMAILS`) ถ้าได้ refresh token พร้อม scope Gmail จะเก็บเป็นการเชื่อม Gmail ของผู้ใช้คนนั้น (ไม่ทับการเชื่อมที่ใช้งานได้กับ mailbox อื่น ส่วนที่หมดอายุจะถูกแทน) ถ้าไม่ให้สิทธิ์ Gmail ก็ยังเข้าระบบได้ ถ้าเข้าระบบไม่ผ่าน (เช่น not_allowed) จะ revoke สิทธิ์ที่ Google เพิ่งให้ทันที สำเร็จ: ตั้ง cookie `expense_session` (HttpOnly, SameSite=Lax, Secure เมื่อ `PUBLIC_BASE_URL` เป็น https) แล้ว redirect ไป `next` ไม่สำเร็จ: redirect ไป `/?login_error=` `not_allowed` | `denied` | `state` | `config` | `failed`
 
 #### ✅ `POST /auth/logout` → 204
 ลบ session และ cookie

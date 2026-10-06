@@ -61,9 +61,10 @@ All ports are bound to `127.0.0.1` except Caddy's. The web UI and expense-api re
    Also add `<PUBLIC_BASE_URL>/api/gmail/callback` as a redirect URI, enable the **Gmail API** in the
    same project, and add the scope `gmail.readonly` to the OAuth consent screen.
 3. Sign in. Add family members in **ตั้งค่า > ผู้ใช้** by their Google address. Each person sees only
-   their own data and connects their own Gmail in **ตั้งค่า > Gmail ของฉัน** (read-only access; the
-   refresh token is stored encrypted with `SECRET_KEY`). User 1 keeps reading `gmail-service/token.json`
-   until connecting there.
+   their own data. Signing in asks Google once for both identity and read-only Gmail, so the first
+   sign-in also connects that person's Gmail (refresh token stored encrypted with `SECRET_KEY`). A
+   banner offers to (re)connect when it is missing or expired; **ตั้งค่า > Gmail ของฉัน** can connect
+   another mailbox or disconnect. User 1 keeps reading `gmail-service/token.json` until connected.
 
    Gmail is a *restricted* scope. While the consent screen is in **Testing**, every person must be
    listed as a test user and Google expires their access after 7 days (Settings then shows

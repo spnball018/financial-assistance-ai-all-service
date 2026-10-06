@@ -99,12 +99,12 @@ def revoke(token: str) -> None:
         pass
 
 
-def exchange_code(code: str, redirect_uri: str, verifier: str) -> dict:
-    """Sign-in: returns the verified ID token claims."""
-    raw = exchange_code_for_tokens(code, redirect_uri, verifier).get("id_token")
-    if not raw:
+def exchange_code(code: str, redirect_uri: str, verifier: str) -> tuple[dict, dict]:
+    """Sign-in: (verified ID token claims, raw token response with scope / refresh_token)."""
+    tokens = exchange_code_for_tokens(code, redirect_uri, verifier)
+    if not tokens.get("id_token"):
         raise OAuthError("no id_token in token response")
-    return verify_id_token(raw)
+    return verify_id_token(tokens["id_token"]), tokens
 
 
 def verify_id_token(raw: str) -> dict:

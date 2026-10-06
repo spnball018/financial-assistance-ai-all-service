@@ -17,6 +17,10 @@ export function LoginPage() {
       <a className="button primary" href={`/api/auth/login?next=${encodeURIComponent(next)}`}>
         เข้าสู่ระบบด้วย Google
       </a>
+      <p className="muted small">
+        ครั้งแรก Google จะขอสิทธิ์อ่าน Gmail (อ่านอย่างเดียว) เพื่อดึงอีเมลแจ้งรายการจากธนาคารและบัตร
+        ถ้าไม่ให้ก็เข้าระบบได้ และเชื่อมทีหลังได้ในหน้าตั้งค่า
+      </p>
     </div>
   );
 }

@@ -281,3 +281,26 @@ export function UsersSection({ meId }: { meId: number }) {
     </section>
   );
 }
+
+/** Shown on every page except Settings while this user's sync cannot read their Gmail. */
+export function GmailBanner({ page }: { page: string }) {
+  const [status, setStatus] = useState<GmailStatus | null>(null);
+  useEffect(() => {
+    api.gmailStatus().then(setStatus, () => setStatus(null));
+  }, [page]);
+  if (!status || page === "settings") return null;
+  const expired = status.connected && status.last_error;
+  if (status.uses_token_json || (status.connected && !expired)) return null;
+  return (
+    <div className="message warn gmail-banner" role="status">
+      <span>
+        {expired
+          ? "สิทธิ์อ่าน Gmail หมดอายุ ต้องเชื่อมใหม่ถึงจะดึงอีเมลธนาคารได้"
+          : "ยังไม่ได้เชื่อม Gmail ระบบจึงยังดึงอีเมลธนาคาร/บัตรของคุณไม่ได้"}
+      </span>
+      <a className="button primary" href={`/api/gmail/connect?next=${encodeURIComponent("/#" + page)}`}>
+        เชื่อมเลย
+      </a>
+    </div>
+  );
+}

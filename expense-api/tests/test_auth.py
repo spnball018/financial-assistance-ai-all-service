@@ -59,7 +59,7 @@ def test_signed_out_gets_401(api):
     assert api.get("/health").status_code == 200
 
 
-def _login(client, monkeypatch, email=ADMIN, verified=True, next_path="/#settings"):
+def _login(client, monkeypatch, email=ADMIN, verified=True, next_path="/#settings", tokens=None):
     """Runs /auth/login then /auth/callback with Google's token endpoint replaced."""
     res = client.get("/auth/login", params={"next": next_path}, follow_redirects=False)
     assert res.status_code == 303
@@ -68,7 +68,8 @@ def _login(client, monkeypatch, email=ADMIN, verified=True, next_path="/#setting
     def fake_exchange(code, redirect_uri, verifier):
         assert code == "the-code" and redirect_uri == "http://testserver/api/auth/callback"
         assert verifier    # came back from the encrypted flow cookie
-        return {"email": email, "email_verified": verified, "name": "Me", "nonce": google["nonce"][0]}
+        claims = {"email": email, "email_verified": verified, "name": "Me", "nonce": google["nonce"][0]}
+        return claims, tokens or {}
 
     monkeypatch.setattr(google_oauth, "exchange_code", fake_exchange)
     return client.get("/auth/callback", params={"code": "the-code", "state": google["state"][0]},
@@ -249,3 +250,72 @@ def test_unconfigured_google_client_fails_closed(api, monkeypatch):
     monkeypatch.delenv("GOOGLE_OAUTH_CLIENT_ID")
     res = api.get("/auth/login", follow_redirects=False)
     assert res.headers["location"].endswith("login_error=config")
+
+
+# ── one consent for sign-in and Gmail ─────────────────────────────────────
+
+GMAIL = "https://www.googleapis.com/auth/gmail.readonly"
+GRANTED = {"refresh_token": "1//from-sign-in", "scope": f"openid email profile {GMAIL}"}
+
+
+@pytest.fixture
+def revoked(monkeypatch):
+    out = []
+    monkeypatch.setattr(google_oauth, "revoke", out.append)
+    return out
+
+
+def _gmail(db, uid=1):
+    with db.connect() as conn:
+        return conn.execute(text("SELECT gmail_address, last_error FROM ledger.gmail_connections WHERE user_id = :u"),
+                            {"u": uid}).first()
+
+
+def test_sign_in_also_asks_for_readonly_gmail_offline(api):
+    q = parse_qs(urlsplit(api.get("/auth/login", follow_redirects=False).headers["location"]).query)
+    assert q["scope"] == [f"openid email profile {GMAIL}"]
+    assert q["access_type"] == ["offline"] and q["include_granted_scopes"] == ["true"]
+
+
+def test_first_sign_in_connects_gmail_later_ones_keep_it(api, db, monkeypatch, revoked):
+    with db.begin() as conn:
+        conn.execute(text("DELETE FROM ledger.gmail_connections"))
+    _login(api, monkeypatch, tokens=GRANTED)
+    assert _gmail(db) == (ADMIN, None)
+    assert api.get("/gmail/status").json()["connected"] is True
+    # Google does not show the consent screen again, so no refresh token: the connection stays
+    _login(api, monkeypatch, tokens={"scope": f"openid email profile {GMAIL}"})
+    assert _gmail(db) == (ADMIN, None)
+    assert revoked == []
+
+
+def test_unticking_gmail_still_signs_in(api, db, monkeypatch):
+    with db.begin() as conn:
+        conn.execute(text("DELETE FROM ledger.gmail_connections"))
+    _login(api, monkeypatch, tokens={"refresh_token": "1//x", "scope": "openid email profile"})
+    assert api.get("/auth/me").status_code == 200
+    assert _gmail(db) is None
+
+
+def test_refused_sign_in_gives_the_gmail_grant_back(api, db, monkeypatch, revoked):
+    with db.begin() as conn:
+        conn.execute(text("DELETE FROM ledger.gmail_connections"))
+    res = _login(api, monkeypatch, email="stranger@example.com", tokens=GRANTED)
+    assert res.headers["location"].endswith("login_error=not_allowed")
+    assert revoked == ["1//from-sign-in"]
+    with db.connect() as conn:
+        assert conn.execute(text("SELECT count(*) FROM ledger.gmail_connections")).scalar() == 0
+
+
+def test_sign_in_does_not_replace_a_working_connection_to_another_mailbox(api, db, monkeypatch, revoked):
+    from app import gmail_connections
+    with db.begin() as conn:
+        conn.execute(text("DELETE FROM ledger.gmail_connections"))
+    gmail_connections.save(1, "bank-mail@gmail.com", "1//other", GMAIL)
+    _login(api, monkeypatch, tokens=GRANTED)
+    assert _gmail(db) == ("bank-mail@gmail.com", None)
+    # ...but an expired one is replaced
+    with db.begin() as conn:
+        conn.execute(text("UPDATE ledger.gmail_connections SET last_error = 'expired'"))
+    _login(api, monkeypatch, tokens=GRANTED)
+    assert _gmail(db) == (ADMIN, None)
