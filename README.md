@@ -67,6 +67,7 @@ Tests: `cd expense-api && TEST_DATABASE_URL=postgresql://postgres:postgres@local
 
 | Document | Contents |
 |---|---|
+| [docs/handoff.md](docs/handoff.md) | Current state, files not in git, setting up a new machine, next tasks |
 | [docs/expense-tracker-plan.md](docs/expense-tracker-plan.md) | Plan, decisions and task status |
 | [docs/api-spec.md](docs/api-spec.md) | HTTP API of every service |
 | [docs/er-diagram.md](docs/er-diagram.md) | `ledger` schema (Mermaid + PNG) |
