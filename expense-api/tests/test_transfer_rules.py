@@ -32,8 +32,8 @@ def add(db, key, merchant, *, to_account=None, channel="promptpay", amount=500):
     raw = {"channel": channel, "to_account": to_account}
     with db.begin() as conn:
         return conn.execute(text(
-            "INSERT INTO ledger.transactions (account_id, node_type, kind, status, amount, occurred_at, source, "
-            "dedup_key, merchant_raw, raw) VALUES (1, 'payment', 'expense', 'pending', :a, :w, 'kbank_email', :k, :m, "
+            "INSERT INTO ledger.transactions (user_id, account_id, node_type, kind, status, amount, occurred_at, source, "
+            "dedup_key, merchant_raw, raw) VALUES (1, 1, 'payment', 'expense', 'pending', :a, :w, 'kbank_email', :k, :m, "
             "CAST(:raw AS jsonb)) RETURNING id"),
             {"a": amount, "w": datetime(2026, 9, 10, 3, 0, tzinfo=TZ), "k": key, "m": merchant,
              "raw": json.dumps(raw)}).scalar()
@@ -62,7 +62,7 @@ def test_destination_number_matches_own_account(env):
     t = add(db, "a", "สมมติ ใจดี", to_account="006-xxxxxxxx-7722")
     other = add(db, "b", "STARBUCKS", to_account=None, channel="bill_payment")
     ai = FakeClassifier({"STARBUCKS": (cat(db, "Cafe & Bakery"), 0.9)})
-    res = categorize_pending(db, ai)
+    res = categorize_pending(db, 1, ai)
     assert res["transfer"] == 1 and res["ai"] == 1
     assert tuple(row(db, t)) == ("transfer", wallet, None, "account")
     assert [i.merchant for i in ai.calls[0]] == ["STARBUCKS"]  # the transfer never goes to the AI
@@ -74,7 +74,7 @@ def test_ambiguous_masked_ref_is_not_guessed(env):
     with db.begin() as conn:
         conn.execute(text("UPDATE ledger.accounts SET masked_ref = '7722' WHERE name IN ('SCB รายรับ', 'BAY ออมทรัพย์')"))
     t = add(db, "a", "X", to_account="123-4-57722-0".replace("-0", ""))
-    categorize_pending(db, None)
+    categorize_pending(db, 1, None)
     assert row(db, t).kind == "expense"
 
 
@@ -84,7 +84,7 @@ def test_user_marks_transfer_then_confirm_learns_per_destination(env):
     a = add(db, "a", "นาย ทดสอบ ระบบ", to_account="006-xxxxxxxx-7722")
     b = add(db, "b", "นาย ทดสอบ ระบบ", to_account="006-xxxxxxxx-7722")  # same destination
     c = add(db, "c", "นาย ทดสอบ ระบบ", to_account="123-4-55555-6")     # same name, other account
-    categorize_pending(db, None)
+    categorize_pending(db, 1, None)
     r = api.patch(f"/transactions/{a}", json={"transfer_account_id": wallet})
     assert r.status_code == 200 and r.json()["kind"] == "transfer" and r.json()["category_id"] is None
     res = api.post("/transactions/confirm", json={"ids": [a]}).json()
@@ -94,7 +94,7 @@ def test_user_marks_transfer_then_confirm_learns_per_destination(env):
     assert q(db, "SELECT action FROM ledger.merchant_memory WHERE merchant_key = 'ทดสอบ ระบบ|7722'") == "transfer"
     # next sync: a new transfer to the same destination is recognised from the rule
     d = add(db, "d", "นาย ทดสอบ ระบบ", to_account="006-xxxxxxxx-7722")
-    assert categorize_pending(db, None)["transfer"] == 1 and row(db, d).category_source == "memory"
+    assert categorize_pending(db, 1, None)["transfer"] == 1 and row(db, d).category_source == "memory"
     # ...and the other destination still is not
     api.patch(f"/transactions/{c}", json={"transfer_account_id": scb})
     assert tuple(row(db, c))[:2] == ("transfer", scb)
@@ -105,7 +105,7 @@ def test_ask_payee_is_never_learned_or_applied(env):
     food = cat(db, "Street Food")
     a = add(db, "a", "เพื่อน คนหนึ่ง", channel="transfer")
     b = add(db, "b", "เพื่อน คนหนึ่ง", channel="transfer")
-    categorize_pending(db, None)
+    categorize_pending(db, 1, None)
     r = api.patch(f"/transactions/{a}", json={"remember": False, "category_id": food}).json()
     assert r["memory_action"] == "ask"
     res = api.post("/transactions/confirm", json={"ids": [a]}).json()
@@ -114,7 +114,7 @@ def test_ask_payee_is_never_learned_or_applied(env):
     # AI still gets asked for "ask" payees
     e = add(db, "e", "เพื่อน คนหนึ่ง", channel="transfer")
     ai = FakeClassifier({"เพื่อน คนหนึ่ง": (food, 0.9)})
-    categorize_pending(db, ai)
+    categorize_pending(db, 1, ai)
     assert row(db, e).category_source == "ai"
     # lifting it
     assert api.patch(f"/transactions/{b}", json={"remember": True}).json()["memory_action"] is None

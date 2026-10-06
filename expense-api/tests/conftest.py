@@ -42,6 +42,10 @@ def db(db_engine):
     with db_engine.begin() as conn:
         conn.execute(text("TRUNCATE ledger.transactions, ledger.raw_emails, ledger.sync_runs "
                           "RESTART IDENTITY CASCADE"))
+        # users other than 1 (from auth tests) and everything they own
+        for t in ("receipts", "merchant_memory", "settings", "ecommerce_orders", "email_sources", "accounts"):
+            conn.execute(text(f"DELETE FROM ledger.{t} WHERE user_id > 1"))
+        conn.execute(text("DELETE FROM ledger.users WHERE id > 1"))
         conn.execute(text("UPDATE ledger.email_sources SET is_active = (source = 'kbank_email'), "
                           "gmail_label = CASE source WHEN 'kbank_email' THEN 'financial-kasikorn' END"))
     return db_engine

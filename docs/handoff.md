@@ -13,8 +13,8 @@
   - สรุปรายเดือน: รายจ่าย, รายรับ, สุทธิ, ยอดโอน
   - ยอดคงเหลือ: ยอดยกมา และเทียบยอดกับอีเมล KBank
   - ตั้งค่า: บัญชี, แหล่งอีเมล, รหัส PDF KTC, กฎที่จำไว้
-- **เข้าสู่ระบบ (P7.1)**: Google sign-in ทุกหน้า, API token (Bearer) สำหรับสคริปต์/Bruno, หลายผู้ใช้ (admin เพิ่มสมาชิกในหน้าตั้งค่า), Caddy ทำ HTTPS สำหรับ public IP (`--profile public`) · **ข้อมูลยังไม่แยกต่อผู้ใช้** (P7.2) อย่าเพิ่มสมาชิกจนกว่า P7.2 จะเสร็จ ไม่งั้นเขาจะเห็นข้อมูลของคุณ
-- **เทสต์**: expense-api 145 ข้อ (+2 ข้อที่ต้องมี PDF จริง) และ credit-card-statement-service 8 ข้อ
+- **เข้าสู่ระบบ (P7.1)**: Google sign-in ทุกหน้า, API token (Bearer) สำหรับสคริปต์/Bruno, หลายผู้ใช้ (admin เพิ่มสมาชิกในหน้าตั้งค่า), Caddy ทำ HTTPS สำหรับ public IP (`--profile public`) · ข้อมูลแยกต่อผู้ใช้แล้ว (P7.2) แต่สมาชิกยัง sync Gmail ของตัวเองไม่ได้ (P7.3) ตอนนี้บันทึกเองได้อย่างเดียว
+- **เทสต์**: expense-api 153 ข้อ (+2 ข้อที่ต้องมี PDF จริง) และ credit-card-statement-service 8 ข้อ
 
 ## สิ่งที่ไม่อยู่ใน git (ต้องย้ายเอง)
 
@@ -81,19 +81,18 @@ cd ../web && npm run build
 - **Gemini**: `gemini-2.5-flash` ตอบ 404 สำหรับผู้ใช้ใหม่ และรุ่น Flash ตัวเต็มตอบ 503 บน free tier บ่อย adapter retry ให้แล้ว เปลี่ยนรุ่นได้ด้วย `GEMINI_MODEL`
 - **sync**: แหล่งที่เพิ่งเปิดดึงย้อน 90 วัน รอบแรกของ KBank ใช้ราว 2 นาที
 - **branch `ktc-track`**: merge เข้า `main` หมดแล้ว ลบได้
-- **migration ล่าสุดคือ 0011** (auth): ถ้าเพิ่ม migration ต้องอัปเดต [er-diagram.md](er-diagram.md) (render PNG ใหม่) และ [api-spec.md](api-spec.md)
+- **migration ล่าสุดคือ 0012** (ข้อมูลต่อผู้ใช้) · DB จริงบนเครื่องเดิมยังอยู่ที่ 0010 (`alembic upgrade head` ตอน start container หรือรันเองก่อน start uvicorn): ถ้าเพิ่ม migration ต้องอัปเดต [er-diagram.md](er-diagram.md) (render PNG ใหม่) และ [api-spec.md](api-spec.md)
 
 ## งานถัดไป
 
-1. **P7.2 แยกข้อมูลต่อผู้ใช้** (ผู้ใช้สั่ง 2026-10-06: แยกกันหมด ไม่แชร์) `user_id` ในทุกตารางข้อมูล, ทุก query กรองด้วย `Principal.user_id`, เทสต์ว่าผู้ใช้ A มองไม่เห็นข้อมูล B
-2. **P7.3 Gmail ต่อผู้ใช้** เชื่อม Gmail ของแต่ละคนจากหน้าเว็บ (ดูข้อจำกัด test user / 7 วันในแผน)
-3. **T1.3 marketplace**: label `marketplace-shopee`, `marketplace-lazada`, `marketplace-aliexpress`, `marketplace-temu`
+1. **P7.3 Gmail ต่อผู้ใช้** เชื่อม Gmail ของแต่ละคนจากหน้าเว็บ (ดูข้อจำกัด test user / 7 วันในแผน) แล้วเอาข้อจำกัด `GMAIL_SERVICE_OWNER` ใน `app/routers/sync.py` ออก
+2. **T1.3 marketplace**: label `marketplace-shopee`, `marketplace-lazada`, `marketplace-aliexpress`, `marketplace-temu`
    - เพิ่มค่า `aliexpress_email`, `temu_email` ใน CHECK ของ `email_sources.source`, `transactions.source` และ `ecommerce_orders.platform` (migration ถัดไป)
    - ดึงอีเมลตัวอย่างมาเก็บใน `expense-api/tests/fixtures/` (ผู้ใช้อนุญาตให้ดึงอีเมลจริงมาเก็บใน fixtures ที่ gitignore แล้ว)
    - เขียน `parsers/<shop>.py` + `sources/<shop>.py` ตาม `sources/base.py` แล้วลงทะเบียนใน `sources/__init__.py`
-4. **T2.1**: จับคู่ order ของ marketplace กับรายการจ่าย (KBank / บรรทัดในบิล KTC) แล้วแตกเป็น order → รายการสินค้า
-5. **T6.7 ส่วนที่เหลือ**: จับคู่กับข้อมูลฝั่ง wallet ของ marketplace หลัง T1.3
-6. **Backlog**
+3. **T2.1**: จับคู่ order ของ marketplace กับรายการจ่าย (KBank / บรรทัดในบิล KTC) แล้วแตกเป็น order → รายการสินค้า
+4. **T6.7 ส่วนที่เหลือ**: จับคู่กับข้อมูลฝั่ง wallet ของ marketplace หลัง T1.3
+5. **Backlog**
    - ถ่ายใบเสร็จก่อนรายการเข้าแล้วจับคู่อัตโนมัติ
    - ย่อรูปใบเสร็จก่อนเก็บ
    - บัญชีกองทุน (กำไร/ขาดทุน)

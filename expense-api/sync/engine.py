@@ -48,16 +48,12 @@ class SyncResult:
     counts: dict[str, dict] = field(default_factory=dict)
 
 
-def _safe_setting(key: str) -> Optional[str]:
-    return secrets.get_setting(key)
-
-
-def _parse_one(engine: Engine, mail: MailClient, source: str, account_id: Optional[int],
+def _parse_one(engine: Engine, mail: MailClient, uid: int, source: str, account_id: Optional[int],
                raw_email_id: int, c: SourceCounts) -> None:
     module = REGISTRY[source]
     try:
         with engine.begin() as conn:
-            email = repo.load_raw_email(conn, raw_email_id)
+            email = repo.load_raw_email(conn, uid, raw_email_id)
 
             def get_attachment(att_id: str) -> bytes:
                 cached = repo.cached_attachment(conn, raw_email_id, att_id)
@@ -68,12 +64,12 @@ def _parse_one(engine: Engine, mail: MailClient, source: str, account_id: Option
                 return content
 
             result = module.parse(email, ParseContext(account_id=account_id, get_attachment=get_attachment,
-                                                      get_setting=_safe_setting))
+                                                      get_setting=lambda key: secrets.get_setting(uid, key)))
             if result.status == "parsed":
                 if account_id is None:
                     raise RuntimeError(f"source {source} has no account_id")
                 for node in result.nodes:
-                    i, d = repo.insert_tree(conn, node, account_id=account_id, source=source, raw_email=email)
+                    i, d = repo.insert_tree(conn, node, user_id=uid, account_id=account_id, source=source, raw_email=email)
                     c.new += i
                     c.duplicate += d
             repo.set_parse_result(conn, raw_email_id, result.status, module.PARSER_VERSION, result.error)
@@ -89,21 +85,21 @@ def _parse_one(engine: Engine, mail: MailClient, source: str, account_id: Option
         c.failed += 1
 
 
-def _fetch_source(engine: Engine, mail: MailClient, src: dict, since: datetime, c: SourceCounts) -> None:
+def _fetch_source(engine: Engine, mail: MailClient, uid: int, src: dict, since: datetime, c: SourceCounts) -> None:
     date_after = since.strftime("%Y/%m/%d")
     search = f"from:{src['sender_filter']}" if src["sender_filter"] else None
     token = None
     while True:
         ids, token = mail.list_message_ids(src["gmail_label"], date_after, search, token)
         with engine.connect() as conn:
-            known = repo.known_message_ids(conn, ids)
+            known = repo.known_message_ids(conn, uid, ids)
         for mid in ids:
             if mid in known:
                 continue
             try:
                 msg = mail.get_message(mid)
                 with engine.begin() as conn:
-                    if repo.insert_raw_email(conn, src["source"], src["gmail_label"], msg) is not None:
+                    if repo.insert_raw_email(conn, uid, src["source"], src["gmail_label"], msg) is not None:
                         c.fetched += 1
             except MailError as e:
                 log.warning("fetch failed source=%s id=%s: %s", src["source"], mid, e)
@@ -112,15 +108,16 @@ def _fetch_source(engine: Engine, mail: MailClient, src: dict, since: datetime, 
             break
 
 
-def run_sync(engine: Engine, mail: MailClient, now: Optional[datetime] = None) -> SyncResult:
+def run_sync(engine: Engine, uid: int, mail: MailClient, now: Optional[datetime] = None) -> SyncResult:
+    """Sync one user's active sources from `mail`, which must be that user's mailbox."""
     now = now or datetime.now(timezone.utc)
     with engine.begin() as conn:
-        if repo.has_running(conn):
+        if repo.has_running(conn, uid):
             raise SyncBusy()
-        last = repo.last_success_range_to(conn)
+        last = repo.last_success_range_to(conn, uid)
         since = (last - timedelta(days=OVERLAP_DAYS)) if last else now - timedelta(days=FIRST_RUN_DAYS)
-        run_id = repo.start_run(conn, since, now)
-        sources = repo.active_sources(conn)
+        run_id = repo.start_run(conn, uid, since, now)
+        sources = repo.active_sources(conn, uid)
 
     counts: dict[str, SourceCounts] = {}
     error = None
@@ -132,16 +129,16 @@ def run_sync(engine: Engine, mail: MailClient, now: Optional[datetime] = None) -
                 continue
             # a source switched on later (or never fetched) gets its own first-run window
             with engine.connect() as conn:
-                src_since = since if repo.has_raw_emails(conn, src["source"]) else now - timedelta(days=FIRST_RUN_DAYS)
+                src_since = since if repo.has_raw_emails(conn, uid, src["source"]) else now - timedelta(days=FIRST_RUN_DAYS)
             try:
-                _fetch_source(engine, mail, src, src_since, c)
+                _fetch_source(engine, mail, uid, src, src_since, c)
             except MailError as e:
                 c.error = f"gmail: {e}"
                 continue
             with engine.connect() as conn:
-                ids = repo.parseable_raw_email_ids(conn, src["source"])
+                ids = repo.parseable_raw_email_ids(conn, uid, src["source"])
             for raw_id in ids:
-                _parse_one(engine, mail, src["source"], src["account_id"], raw_id, c)
+                _parse_one(engine, mail, uid, src["source"], src["account_id"], raw_id, c)
     except Exception as e:  # keep the run row accurate even on unexpected errors
         error = type(e).__name__
         log.exception("sync crashed")
@@ -154,14 +151,14 @@ def run_sync(engine: Engine, mail: MailClient, now: Optional[datetime] = None) -
     return SyncResult(run_id=run_id, counts=out)
 
 
-def reparse(engine: Engine, mail: MailClient, source: str) -> dict:
+def reparse(engine: Engine, uid: int, mail: MailClient, source: str) -> dict:
     """Re-run the parser over every stored email of a source; no Gmail listing, dedup keeps it idempotent."""
     if source not in REGISTRY:
         raise KeyError(source)
     c = SourceCounts()
     with engine.connect() as conn:
-        account_id = repo.source_account(conn, source)
-        ids = repo.parseable_raw_email_ids(conn, source, everything=True)
+        account_id = repo.source_account(conn, uid, source)
+        ids = repo.parseable_raw_email_ids(conn, uid, source, everything=True)
     for raw_id in ids:
-        _parse_one(engine, mail, source, account_id, raw_id, c)
+        _parse_one(engine, mail, uid, source, account_id, raw_id, c)
     return c.as_dict()

@@ -3,12 +3,11 @@
 The password is stored Fernet-encrypted by app.secrets and is never returned by any endpoint;
 the UI can only learn whether it is set.
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import text
 
 from app import secrets
-from app.db import get_engine
+from app.auth import current_user_id
 from sources.ktc import PASSWORD_KEY
 
 router = APIRouter(tags=["ktc"])
@@ -28,17 +27,16 @@ def _guard(fn):
 
 
 @router.put("/settings/ktc-password", status_code=204)
-def set_ktc_password(body: PasswordIn):
-    _guard(lambda: secrets.set_setting(PASSWORD_KEY, body.password))
+def set_ktc_password(body: PasswordIn, uid: int = Depends(current_user_id)):
+    _guard(lambda: secrets.set_setting(uid, PASSWORD_KEY, body.password))
 
 
 @router.get("/settings/ktc-password/status")
-def ktc_password_status():
-    updated = secrets.setting_updated_at(PASSWORD_KEY)
+def ktc_password_status(uid: int = Depends(current_user_id)):
+    updated = secrets.setting_updated_at(uid, PASSWORD_KEY)
     return {"is_set": updated is not None, "updated_at": updated}
 
 
 @router.delete("/settings/ktc-password", status_code=204)
-def delete_ktc_password():
-    with get_engine().begin() as conn:
-        conn.execute(text("DELETE FROM ledger.settings WHERE key = :k"), {"k": PASSWORD_KEY})
+def delete_ktc_password(uid: int = Depends(current_user_id)):
+    secrets.delete_setting(uid, PASSWORD_KEY)

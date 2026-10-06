@@ -48,20 +48,20 @@ _TODO = text("""
 SELECT t.id, t.account_id, t.merchant_raw, t.description, t.amount, t.node_type,
        t.raw->>'channel' AS channel, t.raw->>'to_account' AS to_account
 FROM ledger.transactions t
-WHERE t.status = 'pending' AND t.kind = 'expense' AND t.category_source = 'none'
+WHERE t.user_id = :uid AND t.status = 'pending' AND t.kind = 'expense' AND t.category_source = 'none'
   AND NOT EXISTS (SELECT 1 FROM ledger.transactions c WHERE c.parent_id = t.id)
 ORDER BY t.id""")
 
 _SET = text("""
 UPDATE ledger.transactions
 SET category_id = :cat, category_source = :src, ai_confidence = :conf, ai_reason = :reason, updated_at = now()
-WHERE id = :id AND category_source = 'none'""")
+WHERE id = :id AND user_id = :uid AND category_source = 'none'""")
 
 _SET_TRANSFER = text("""
 UPDATE ledger.transactions
 SET kind = 'transfer', counter_account_id = :acct, category_id = NULL, category_source = :src,
     ai_confidence = NULL, ai_reason = NULL, updated_at = now()
-WHERE id = :id AND category_source = 'none'""")
+WHERE id = :id AND user_id = :uid AND category_source = 'none'""")
 
 
 def _leaf_categories(conn) -> tuple[list[Category], int]:
@@ -77,10 +77,11 @@ def _leaf_categories(conn) -> tuple[list[Category], int]:
     return cats, unc
 
 
-def categorize_pending(engine: Engine, classifier: Optional[Classifier]) -> dict:
+def categorize_pending(engine: Engine, uid: int, classifier: Optional[Classifier]) -> dict:
+    """One user's pending rows, with that user's rules and accounts."""
     c = Counts()
     with engine.begin() as conn:
-        todo = conn.execute(_TODO).all()
+        todo = conn.execute(_TODO, {"uid": uid}).all()
         if not todo:
             return c.as_dict()
         # store merchant_key on every row we look at; T3.4 uses it when the user confirms
@@ -90,20 +91,21 @@ def categorize_pending(engine: Engine, classifier: Optional[Classifier]) -> dict
             conn.execute(text("UPDATE ledger.transactions SET merchant_key = :k WHERE id = :id"),
                          {"k": keys[r.id], "id": r.id})
         rule_keys = [k for r in todo for k in {keys[r.id], memory.rule_key(keys[r.id], r.to_account)} if k]
-        rules = memory.lookup(conn, rule_keys)
+        rules = memory.lookup(conn, uid, rule_keys)
         rest = []
         for r in todo:
-            own = memory.own_account_for(conn, r.to_account, r.account_id)
+            own = memory.own_account_for(conn, uid, r.to_account, r.account_id)
             if own:
-                conn.execute(_SET_TRANSFER, {"acct": own, "src": "account", "id": r.id})
+                conn.execute(_SET_TRANSFER, {"acct": own, "src": "account", "id": r.id, "uid": uid})
                 c.transfer += 1
                 continue
             rule = memory.find(rules, keys[r.id], r.to_account)
             if rule and rule.action == "transfer" and rule.counter_account_id != r.account_id:
-                conn.execute(_SET_TRANSFER, {"acct": rule.counter_account_id, "src": "memory", "id": r.id})
+                conn.execute(_SET_TRANSFER, {"acct": rule.counter_account_id, "src": "memory", "id": r.id, "uid": uid})
                 c.transfer += 1
             elif rule and rule.action == "category":
-                conn.execute(_SET, {"cat": rule.category_id, "src": "memory", "conf": None, "reason": None, "id": r.id})
+                conn.execute(_SET, {"cat": rule.category_id, "src": "memory", "conf": None, "reason": None, "id": r.id,
+                                    "uid": uid})
                 c.memory += 1
             else:  # no rule, or "ask": let the AI suggest; the user decides on review
                 rest.append(r)
@@ -137,7 +139,7 @@ def categorize_pending(engine: Engine, classifier: Optional[Classifier]) -> dict
                 conf = max(0.0, min(1.0, p.confidence))
                 ok = p.category_id in valid and conf >= threshold
                 conn.execute(_SET, {"cat": p.category_id if ok else unc, "src": "ai", "conf": round(conf, 3),
-                                    "reason": (p.reason or "")[:500], "id": r.id})
+                                    "reason": (p.reason or "")[:500], "id": r.id, "uid": uid})
                 if ok and p.category_id != unc:
                     c.ai += 1
                 else:

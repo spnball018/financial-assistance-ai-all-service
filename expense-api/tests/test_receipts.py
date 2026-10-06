@@ -30,8 +30,8 @@ def env(db, monkeypatch, tmp_path):
     with db.begin() as conn:
         conn.execute(text("TRUNCATE ledger.receipts RESTART IDENTITY CASCADE"))
         pay = conn.execute(text(
-            "INSERT INTO ledger.transactions (account_id, node_type, kind, status, amount, occurred_at, source, dedup_key, "
-            "merchant_raw, category_id, category_source) VALUES (1, 'payment', 'expense', 'pending', 250, :w, "
+            "INSERT INTO ledger.transactions (user_id, account_id, node_type, kind, status, amount, occurred_at, source, dedup_key, "
+            "merchant_raw, category_id, category_source) VALUES (1, 1, 'payment', 'expense', 'pending', 250, :w, "
             "'kbank_email', 'pay', 'BIG C', :c, 'ai') RETURNING id"),
             {"w": datetime(2026, 9, 12, 5, 0, tzinfo=timezone.utc), "c": cat(db, "Supermarket")}).scalar()
     reading = ReceiptReading(merchant="BIG C", total=250, items=[

@@ -14,9 +14,9 @@ TZ = timezone.utc
 def add(db, key, merchant, *, parent=None, status="pending", source_cat="none", kind="expense"):
     with db.begin() as conn:
         return conn.execute(text(
-            "INSERT INTO ledger.transactions (account_id, parent_id, node_type, kind, counter_account_id, status, "
+            "INSERT INTO ledger.transactions (user_id, account_id, parent_id, node_type, kind, counter_account_id, status, "
             "amount, occurred_at, source, dedup_key, merchant_raw, category_source, raw) "
-            "VALUES (1, :p, 'payment', :kind, CASE WHEN :kind = 'transfer' THEN 2 END, :st, 100, :at, "
+            "VALUES (1, 1, :p, 'payment', :kind, CASE WHEN :kind = 'transfer' THEN 2 END, :st, 100, :at, "
             "'kbank_email', :k, :m, :cs, '{\"channel\": \"bill_payment\"}') RETURNING id"),
             {"p": parent, "st": status, "at": datetime(2026, 10, 1, tzinfo=TZ), "k": key, "m": merchant,
              "cs": source_cat, "kind": kind}).scalar()
@@ -43,10 +43,10 @@ def cdb(db):
 def test_memory_hit_wins_and_ai_is_not_called(cdb):
     fuel = cat_id(cdb, "Fuel")
     with cdb.begin() as conn:
-        memory.remember(conn, "mcp pt ban pho", fuel)
+        memory.remember(conn, 1, "mcp pt ban pho", fuel)
     t = add(cdb, "k1", "MCP-PT Ban Pho 3 (พีที บ้านโพธิ์3)")
     ai = FakeClassifier({})
-    res = categorize_pending(cdb, ai)
+    res = categorize_pending(cdb, 1, ai)
     assert res["memory"] == 1 and ai.calls == []
     r = row(cdb, t)
     assert (r.category_id, r.category_source, r.merchant_key) == (fuel, "memory", "mcp pt ban pho")
@@ -56,7 +56,7 @@ def test_ai_above_threshold_sets_category(cdb, monkeypatch):
     monkeypatch.setenv("AI_CONFIDENCE_THRESHOLD", "0.7")
     cafe = cat_id(cdb, "Cafe & Bakery")
     t = add(cdb, "k1", "STARBUCKS")
-    res = categorize_pending(cdb, FakeClassifier({"STARBUCKS": (cafe, 0.93)}))
+    res = categorize_pending(cdb, 1, FakeClassifier({"STARBUCKS": (cafe, 0.93)}))
     assert res["ai"] == 1
     r = row(cdb, t)
     assert (r.category_id, r.category_source, float(r.ai_confidence)) == (cafe, "ai", 0.93)
@@ -67,7 +67,7 @@ def test_low_confidence_and_invalid_category_become_uncategorized(cdb):
     food_parent = cat_id(cdb, "Food & Dining")  # has children -> not a valid answer
     a = add(cdb, "k1", "SOMEONE")
     b = add(cdb, "k2", "ODD SHOP")
-    res = categorize_pending(cdb, FakeClassifier({"SOMEONE": (cat_id(cdb, "Fuel"), 0.4),
+    res = categorize_pending(cdb, 1, FakeClassifier({"SOMEONE": (cat_id(cdb, "Fuel"), 0.4),
                                                   "ODD SHOP": (food_parent, 0.99)}))
     assert res["uncategorized"] == 2
     assert row(cdb, a).category_id == unc and row(cdb, a).category_source == "ai"
@@ -76,7 +76,7 @@ def test_low_confidence_and_invalid_category_become_uncategorized(cdb):
 
 def test_without_ai_rows_stay_none_for_later(cdb):
     t = add(cdb, "k1", "STARBUCKS")
-    res = categorize_pending(cdb, None)
+    res = categorize_pending(cdb, 1, None)
     assert res == {"transfer": 0, "memory": 0, "ai": 0, "uncategorized": 0, "left": 1}
     assert row(cdb, t).category_source == "none" and row(cdb, t).merchant_key == "starbucks"
 
@@ -88,7 +88,7 @@ def test_skips_parents_confirmed_already_categorized_and_transfers(cdb):
     add(cdb, "user", "Y", source_cat="user")
     add(cdb, "tr", "KTC", kind="transfer")
     ai = FakeClassifier({"ITEM": (cat_id(cdb, "Fashion"), 0.9)})
-    categorize_pending(cdb, ai)
+    categorize_pending(cdb, 1, ai)
     assert [i.merchant for i in ai.calls[0]] == ["ITEM"]
     assert row(cdb, parent).category_source == "none"
 
@@ -99,15 +99,15 @@ def test_ai_failure_is_reported_and_rows_left(cdb):
             raise RuntimeError("secret prompt content")
 
     add(cdb, "k1", "A")
-    res = categorize_pending(cdb, Boom())
+    res = categorize_pending(cdb, 1, Boom())
     assert res["left"] == 1 and res["error"] == "ai: RuntimeError"
 
 
 def test_remember_updates_and_counts(cdb):
     a, b = cat_id(cdb, "Fuel"), cat_id(cdb, "Tolls")
     with cdb.begin() as conn:
-        memory.remember(conn, "k", a)
-        memory.remember(conn, "k", b)
+        memory.remember(conn, 1, "k", a)
+        memory.remember(conn, 1, "k", b)
         r = conn.execute(text("SELECT category_id, hit_count FROM ledger.merchant_memory WHERE merchant_key='k'")).one()
     assert (r.category_id, r.hit_count) == (b, 2)
 
@@ -139,7 +139,7 @@ def test_batch_size_from_env(cdb, monkeypatch):
     for i in range(5):
         add(cdb, f"k{i}", f"M{i}")
     ai = FakeClassifier({f"M{i}": (cat_id(cdb, "Fuel"), 0.9) for i in range(5)})
-    categorize_pending(cdb, ai)
+    categorize_pending(cdb, 1, ai)
     assert [len(c) for c in ai.calls] == [2, 2, 1]
 
 
@@ -199,7 +199,7 @@ def test_misconfigured_categorizer_does_not_block_sync_endpoint(monkeypatch):
 
     monkeypatch.setenv("CATEGORIZER", "vertex")
     monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
-    monkeypatch.setattr(sync_router.sync_engine, "run_sync", lambda engine, mail: SyncResult(run_id=7, counts={}))
+    monkeypatch.setattr(sync_router.sync_engine, "run_sync", lambda engine, uid, mail: SyncResult(run_id=7, counts={}))
     monkeypatch.setattr(sync_router, "get_engine", lambda: None)
     app.dependency_overrides[sync_router.get_mail_client] = lambda: None
     try:

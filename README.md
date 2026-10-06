@@ -59,7 +59,8 @@ All ports are bound to `127.0.0.1` except Caddy's. The web UI and expense-api re
 2. In `expense-api/.env`: `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `PUBLIC_BASE_URL`,
    and `ADMIN_EMAILS` (your Google address; always an admin). `SECRET_KEY` must be set too.
 3. Sign in. Add family members in **ตั้งค่า > ผู้ใช้** by their Google address. Each person will see
-   only their own data. (Per-user data separation and Gmail per person are being built: Phase 7 in the plan.)
+   only their own data. Connecting each person's own Gmail is not built yet (P7.3), so for now only
+   user 1 (the owner of `gmail-service/token.json`) can sync; others enter transactions by hand.
 4. For scripts and Bruno: **ตั้งค่า > API token**, then send `Authorization: Bearer fat_...`.
 
 For local development without Google, set `AUTH_MODE=off` in `expense-api/.env`. It acts as user 1 and

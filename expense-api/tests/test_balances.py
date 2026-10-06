@@ -31,8 +31,8 @@ def add(db, key, amount, *, account=1, kind="expense", counter=None, status="con
         when=datetime(2026, 9, 10, 3, 0, tzinfo=TZ)):
     with db.begin() as conn:
         return conn.execute(text(
-            "INSERT INTO ledger.transactions (account_id, parent_id, node_type, kind, counter_account_id, status, "
-            "amount, occurred_at, source, dedup_key) VALUES (:a, :p, 'payment', :k, :c, :s, :amt, :w, 'manual', :dk) "
+            "INSERT INTO ledger.transactions (user_id, account_id, parent_id, node_type, kind, counter_account_id, status, "
+            "amount, occurred_at, source, dedup_key) VALUES (1, :a, :p, 'payment', :k, :c, :s, :amt, :w, 'manual', :dk) "
             "RETURNING id"), {"a": account, "p": parent, "k": kind, "c": counter, "s": status,
                               "amt": Decimal(amount), "w": when, "dk": key}).scalar()
 
@@ -89,7 +89,7 @@ def test_opening_rows_are_not_reported_as_spending(api, db):
     from ledger.reports import monthly_summary
     api.put("/accounts/1/opening-balance", json={"amount": "10000", "as_of": "2026-09-01"})
     with db.connect() as conn:
-        assert monthly_summary(conn, "2026-09")["total"] == 0
+        assert monthly_summary(conn, 1, "2026-09")["total"] == 0
 
 
 def test_kbank_reported_balance_vs_computed(api, db):
@@ -99,8 +99,8 @@ def test_kbank_reported_balance_vs_computed(api, db):
     msg = json.loads(p.read_text(encoding="utf-8"))
     with db.begin() as conn:
         conn.execute(text(
-            "INSERT INTO ledger.raw_emails (gmail_message_id, source, text_body, received_at, parse_status) "
-            "VALUES (:m, 'kbank_email', :b, now(), 'parsed')"), {"m": msg["id"], "b": msg["text_body"]})
+            "INSERT INTO ledger.raw_emails (user_id, gmail_message_id, source, text_body, received_at, parse_status) "
+            "VALUES (1, :m, 'kbank_email', :b, now(), 'parsed')"), {"m": msg["id"], "b": msg["text_body"]})
     # the fixture: paid 700.00 on 2026-10-03 10:52:02 (Bangkok), available balance 14,189.79
     api.put("/accounts/1/opening-balance", json={"amount": "15000", "as_of": "2026-10-01"})
     add(db, "pay", "700", when=datetime(2026, 10, 3, 3, 52, 2, tzinfo=TZ))

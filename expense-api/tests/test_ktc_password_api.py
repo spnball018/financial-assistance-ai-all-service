@@ -12,7 +12,6 @@ from app.main import app
 def api(db, monkeypatch):
     monkeypatch.setenv("SECRET_KEY", Fernet.generate_key().decode())
     monkeypatch.setattr("app.secrets.get_engine", lambda: db)
-    monkeypatch.setattr("app.routers.ktc.get_engine", lambda: db)
     with db.begin() as conn:
         conn.execute(text("DELETE FROM ledger.settings"))
     return TestClient(app)
@@ -28,7 +27,7 @@ def test_set_status_and_never_returned(api, db):
     with db.connect() as conn:
         stored = conn.execute(text("SELECT value_encrypted FROM ledger.settings WHERE key = 'ktc_pdf_password'")).scalar()
     assert "s3cret-dob" not in stored
-    assert secrets.get_setting("ktc_pdf_password") == "s3cret-dob"   # what the sync uses
+    assert secrets.get_setting(1, "ktc_pdf_password") == "s3cret-dob"   # what the sync uses
     assert api.delete("/settings/ktc-password").status_code == 204
     assert api.get("/settings/ktc-password/status").json()["is_set"] is False
 

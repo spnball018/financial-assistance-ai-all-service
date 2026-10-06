@@ -100,13 +100,22 @@ def user_for_sign_in(email: str, name: Optional[str]) -> Optional[dict]:
             if not exists:
                 conn.execute(text("UPDATE ledger.users SET email = :e WHERE email = :p"),
                              {"e": email, "p": PLACEHOLDER_OWNER})
-            conn.execute(text(
+            uid = conn.execute(text(
                 "INSERT INTO ledger.users (email, role) VALUES (:e, 'admin') "
-                "ON CONFLICT (email) DO UPDATE SET role = 'admin', is_active = true"), {"e": email})
+                "ON CONFLICT (email) DO UPDATE SET role = 'admin', is_active = true RETURNING id"), {"e": email}).scalar()
+            _provision(conn, uid)
         row = conn.execute(text(
             f"UPDATE ledger.users SET last_login_at = now(), name = COALESCE(:name, name) "
             f"WHERE email = :e AND is_active RETURNING {USER_COLUMNS}"), {"e": email, "name": name}).first()
     return dict(row._mapping) if row else None
+
+
+def _provision(conn, user_id: int) -> None:
+    """A new user starts with every known email source (switched off, no label) and nothing else."""
+    conn.execute(text(
+        "INSERT INTO ledger.email_sources (user_id, source, is_active) "
+        "SELECT :uid, s.source, false FROM (SELECT DISTINCT source FROM ledger.email_sources) s "
+        "ON CONFLICT (user_id, source) DO NOTHING"), {"uid": user_id})
 
 
 def list_users() -> list[dict]:
@@ -120,6 +129,8 @@ def add_user(email: str, role: str) -> Optional[dict]:
         row = conn.execute(text(
             f"INSERT INTO ledger.users (email, role) VALUES (:e, :role) ON CONFLICT (email) DO NOTHING "
             f"RETURNING {USER_COLUMNS}"), {"e": email.strip().lower(), "role": role}).first()
+        if row is not None:
+            _provision(conn, row.id)
     return dict(row._mapping) if row else None
 
 
@@ -258,6 +269,11 @@ def require_user(request: Request,
     if request.method not in SAFE_METHODS and not request.headers.get("x-requested-with"):
         raise HTTPException(status_code=403, detail="Missing X-Requested-With header")
     return principal
+
+
+def current_user_id(principal: Principal = Depends(require_user)) -> int:
+    """Every data query filters by this; FastAPI runs require_user once per request."""
+    return principal.user_id
 
 
 def require_session(principal: Principal = Depends(require_user)) -> Principal:

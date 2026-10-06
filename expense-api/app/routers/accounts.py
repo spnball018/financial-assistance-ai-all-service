@@ -3,11 +3,12 @@ from datetime import date
 from decimal import Decimal
 from typing import Literal, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
+from app.auth import current_user_id
 from app.db import get_engine
 from ledger import balances as bal
 
@@ -54,34 +55,35 @@ class AccountPatch(BaseModel):
 
 
 def _duplicate(e: IntegrityError) -> HTTPException:
-    if "accounts_name_key" in str(e.orig):
+    if "accounts_user_name_key" in str(e.orig):
         return HTTPException(status_code=409, detail="an account with this name already exists")
     raise e
 
 
 @router.get("/accounts")
-def list_accounts(include_inactive: bool = True):
+def list_accounts(include_inactive: bool = True, uid: int = Depends(current_user_id)):
     with get_engine().connect() as conn:
-        where = "" if include_inactive else "WHERE is_active"
-        rows = conn.execute(text(f"SELECT {_COLS} FROM ledger.accounts {where} ORDER BY sort_order, id"))
+        where = "" if include_inactive else "AND is_active"
+        rows = conn.execute(text(f"SELECT {_COLS} FROM ledger.accounts WHERE user_id = :uid {where} "
+                                 "ORDER BY sort_order, id"), {"uid": uid})
         return [dict(r._mapping) for r in rows]
 
 
 @router.post("/accounts", status_code=201)
-def create_account(body: AccountIn):
+def create_account(body: AccountIn, uid: int = Depends(current_user_id)):
     try:
         with get_engine().begin() as conn:
             row = conn.execute(text(
-                "INSERT INTO ledger.accounts (name, type, institution, masked_ref, purpose, currency, sort_order) "
-                f"VALUES (:name, :type, :institution, :masked_ref, :purpose, :currency, :sort_order) RETURNING {_COLS}"),
-                body.model_dump()).one()
+                "INSERT INTO ledger.accounts (user_id, name, type, institution, masked_ref, purpose, currency, sort_order) "
+                f"VALUES (:uid, :name, :type, :institution, :masked_ref, :purpose, :currency, :sort_order) RETURNING {_COLS}"),
+                {**body.model_dump(), "uid": uid}).one()
     except IntegrityError as e:
         raise _duplicate(e)
     return dict(row._mapping)
 
 
 @router.patch("/accounts/{account_id}")
-def update_account(account_id: int, body: AccountPatch):
+def update_account(account_id: int, body: AccountPatch, uid: int = Depends(current_user_id)):
     """Only the fields sent are changed. Accounts are never deleted (transactions point at them);
     set is_active=false to hide one."""
     fields = {k: getattr(body, k) for k in body.model_fields_set}
@@ -94,8 +96,10 @@ def update_account(account_id: int, body: AccountPatch):
         with get_engine().begin() as conn:
             if fields:
                 sets = ", ".join(f"{k} = :{k}" for k in fields)
-                conn.execute(text(f"UPDATE ledger.accounts SET {sets} WHERE id = :id"), {**fields, "id": account_id})
-            row = conn.execute(text(f"SELECT {_COLS} FROM ledger.accounts WHERE id = :id"), {"id": account_id}).first()
+                conn.execute(text(f"UPDATE ledger.accounts SET {sets} WHERE id = :id AND user_id = :uid"),
+                             {**fields, "id": account_id, "uid": uid})
+            row = conn.execute(text(f"SELECT {_COLS} FROM ledger.accounts WHERE id = :id AND user_id = :uid"),
+                               {"id": account_id, "uid": uid}).first()
     except IntegrityError as e:
         raise _duplicate(e)
     if row is None:
@@ -104,11 +108,11 @@ def update_account(account_id: int, body: AccountPatch):
 
 
 @router.get("/accounts/balances")
-def account_balances():
+def account_balances(uid: int = Depends(current_user_id)):
     """Per account: balance (confirmed), balance_with_pending, opening balance, and for the KBank account
     the bank's latest reported balance next to the computed one."""
     with get_engine().connect() as conn:
-        return bal.balances(conn)
+        return bal.balances(conn, uid)
 
 
 class OpeningBalance(BaseModel):
@@ -117,16 +121,16 @@ class OpeningBalance(BaseModel):
 
 
 @router.put("/accounts/{account_id}/opening-balance")
-def put_opening_balance(account_id: int, body: OpeningBalance):
+def put_opening_balance(account_id: int, body: OpeningBalance, uid: int = Depends(current_user_id)):
     """Balance at the start of `as_of` (Bangkok). Negative for money owed (credit card)."""
     try:
         with get_engine().begin() as conn:
-            return bal.set_opening(conn, account_id, body.amount, body.as_of)
+            return bal.set_opening(conn, uid, account_id, body.amount, body.as_of)
     except bal.NotFound:
         raise HTTPException(status_code=404, detail="account not found")
 
 
 @router.delete("/accounts/{account_id}/opening-balance", status_code=204)
-def delete_opening_balance(account_id: int):
+def delete_opening_balance(account_id: int, uid: int = Depends(current_user_id)):
     with get_engine().begin() as conn:
-        bal.delete_opening(conn, account_id)
+        bal.delete_opening(conn, uid, account_id)

@@ -1,14 +1,15 @@
 # ER diagram: schema `ledger`
 
-สร้างจาก DB จริง (migration 0011, 2026-10-06) ถ้าเพิ่ม migration ให้อัปเดตไฟล์นี้ด้วย ส่วนตาราง `alembic_version` ไม่ได้แสดง
+สร้างจาก DB จริง (migration 0012, 2026-10-06) ถ้าเพิ่ม migration ให้อัปเดตไฟล์นี้ด้วย ส่วนตาราง `alembic_version` ไม่ได้แสดง
 
 ภาพ PNG: [er-diagram.png](er-diagram.png) (render จาก Mermaid ข้างล่าง ใช้ดูใน editor ที่ไม่รองรับ Mermaid ถ้าแก้ diagram ให้ render ใหม่ด้วย `npx @mermaid-js/mermaid-cli -i <ไฟล์ .mmd> -o docs/er-diagram.png -w 2400 -b white`)
 
 ```mermaid
 erDiagram
     accounts {
+        int user_id FK "เจ้าของข้อมูล"
         int id PK
-        text name UK
+        text name "UK ต่อผู้ใช้"
         text type "bank | credit_card | ewallet | cash | investment"
         text institution
         text masked_ref "เลขท้าย >= 4 ตัว ใช้จับคู่การโอน"
@@ -29,6 +30,7 @@ erDiagram
     }
 
     transactions {
+        int user_id FK "เจ้าของข้อมูล"
         bigint id PK
         int account_id FK
         bigint parent_id FK "ต้นไม้ แม่ -> ลูก"
@@ -44,7 +46,7 @@ erDiagram
         bool has_time
         text source "kbank_email | ktc_pdf | shopee_email | lazada_email | manual"
         text source_ref
-        text dedup_key UK
+        text dedup_key "UK ต่อผู้ใช้"
         text gmail_message_id
         text merchant_raw
         text merchant_key "ใช้ค้น merchant_memory"
@@ -62,8 +64,9 @@ erDiagram
     }
 
     merchant_memory {
+        int user_id FK "เจ้าของข้อมูล"
         int id PK
-        text merchant_key UK "ผู้รับ หรือ ผู้รับ|เลขท้ายปลายทาง (กฎ transfer)"
+        text merchant_key "UK ต่อผู้ใช้: ผู้รับ หรือ ผู้รับ|เลขท้ายปลายทาง (กฎ transfer)"
         text action "category | transfer | ask"
         int category_id FK "เมื่อ action = category"
         int counter_account_id FK "เมื่อ action = transfer"
@@ -72,8 +75,9 @@ erDiagram
     }
 
     email_sources {
+        int user_id FK "เจ้าของข้อมูล"
         int id PK
-        text source UK "kbank_email | ktc_pdf | shopee_email | lazada_email"
+        text source "UK ต่อผู้ใช้: kbank_email | ktc_pdf | shopee_email | lazada_email"
         text gmail_label
         text sender_filter
         int account_id FK
@@ -82,8 +86,9 @@ erDiagram
     }
 
     raw_emails {
+        int user_id FK "เจ้าของข้อมูล"
         bigint id PK
-        text gmail_message_id UK
+        text gmail_message_id "UK ต่อผู้ใช้"
         text source "ตรงกับ email_sources.source (ไม่มี FK)"
         text gmail_label
         text subject
@@ -109,6 +114,7 @@ erDiagram
     }
 
     ecommerce_orders {
+        int user_id FK "เจ้าของข้อมูล"
         bigint id PK
         text platform "shopee | lazada (UK ร่วมกับ order_id)"
         text order_id
@@ -132,11 +138,12 @@ erDiagram
     }
 
     receipts {
+        int user_id FK "เจ้าของข้อมูล"
         bigint id PK
         bigint transaction_id FK "รายการจ่ายที่แนบ"
         text storage_uri "path ของไฟล์ใน RECEIPTS_DIR (ไม่เก็บรูปใน DB)"
         text mime_type
-        text sha256 UK
+        text sha256 "UK ต่อผู้ใช้"
         timestamptz uploaded_at
         text ocr_status "pending | done | failed"
         jsonb ocr_result "รายการที่อ่านได้ + หมวดที่เสนอ"
@@ -146,6 +153,7 @@ erDiagram
     }
 
     sync_runs {
+        int user_id FK "เจ้าของข้อมูล"
         int id PK
         timestamptz started_at
         timestamptz finished_at
@@ -157,7 +165,8 @@ erDiagram
     }
 
     settings {
-        text key PK "เช่น ktc_pdf_password"
+        int user_id FK "เจ้าของข้อมูล"
+        text key PK "PK ร่วมกับ user_id เช่น ktc_pdf_password"
         text value_encrypted "Fernet"
         timestamptz updated_at
     }
@@ -211,6 +220,7 @@ erDiagram
     transactions |o--o{ receipts : "transaction_id"
     receipts |o--o{ transactions : "receipt_id"
     email_sources ||..o{ raw_emails : "source (ตรรกะ ไม่มี FK)"
+    users ||--o{ accounts : "user_id (และทุกตารางข้อมูล)"
     users ||--o{ auth_sessions : "user_id"
     users ||--o{ api_tokens : "user_id"
 ```
@@ -226,7 +236,7 @@ erDiagram
 | รอจับคู่ | `ecommerce_orders`, `ecommerce_order_items` | order ของ Shopee/Lazada ก่อนผูกกับรายการจ่าย (ยังไม่ได้ใช้ รอ T1.3) |
 | ใบเสร็จ | `receipts` | รูปใบเสร็จและผลที่อ่านได้ ลูกที่แยกออกมาชี้กลับด้วย `transactions.receipt_id` |
 | ความลับ | `settings` | ค่าที่เข้ารหัส เช่น รหัส PDF ของ KTC |
-| ผู้ใช้ | `users`, `auth_sessions`, `api_tokens` | ผู้ใช้ (admin/member), session จาก Google sign-in และ API token เก็บแค่ sha256 ของความลับ ข้อมูลยังไม่แยกต่อผู้ใช้ (P7.2) |
+| ผู้ใช้ | `users`, `auth_sessions`, `api_tokens` | ผู้ใช้ (admin/member), session จาก Google sign-in และ API token เก็บแค่ sha256 ของความลับ |
 
 ## View
 
@@ -235,6 +245,9 @@ erDiagram
 - **`v_account_postings`**: ความเคลื่อนไหวของเงินต่อบัญชี (บวก = เข้า, ลบ = ออก) ใช้คำนวณยอดคงเหลือ ขาบัญชีมาจากรายการ root (expense/transfer ออก, income/opening เข้า) และทุก transfer มีอีกขาเข้าบัญชีปลายทาง การโอนระหว่างบัญชีตัวเองจึงรวมกันได้ 0
 
 ## กติกาที่ schema บังคับ
+
+- **ข้อมูลแยกต่อผู้ใช้ (P7.2)**: ทุกตารางข้อมูลมี `user_id` (ยกเว้น `categories` ที่ใช้ร่วม และ `raw_attachments` / `ecommerce_order_items` ที่ตามแม่) unique key เป็นต่อผู้ใช้ และ FK ระหว่างแถวข้อมูลรวม `user_id` ด้วย เช่น `transactions (account_id, user_id) → accounts (id, user_id)` DB จึงไม่ยอมให้แถวของคนหนึ่งชี้ไปที่บัญชี/รายการ/อีเมล/ใบเสร็จของอีกคน FK ที่ต้อง SET NULL ใช้ `ON DELETE SET NULL (column)` เพื่อไม่ล้าง `user_id`
+- view ทั้งสองมีคอลัมน์ `user_id` ทุก query ต้องกรองด้วย
 
 - `transactions.kind = 'transfer'` ต้องมี `counter_account_id`
 - `transactions.dedup_key` ไม่ซ้ำ ทำให้ sync ซ้ำได้โดยไม่เกิดรายการซ้ำ

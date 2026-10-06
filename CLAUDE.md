@@ -54,6 +54,8 @@ Design docs live in `docs/`: start with `handoff.md` (current state, files not i
 
 `expense-api` has a pytest suite; `web` type-checks and builds with `npm run build`. The other services are verified by running them.
 
+Data is per user (migration 0012): every data table has `user_id`, and every function that touches data takes `uid` as its second argument (after `conn`/`engine`) and filters by it; routers get it from `Depends(current_user_id)`. `categories` are shared. Composite foreign keys `(x_id, user_id)` stop rows from pointing at another user's data. `tests/test_isolation.py` covers this.
+
 New routers: mount them on `protected` in `app/main.py` (never on `app` directly); `tests/test_auth.py` calls every OpenAPI path signed out and fails on any that is not 401. The tests' autouse fixture `signed_in` (conftest) signs every other test in as user 1.
 
 Migrations: add `expense-api/alembic/versions/NNNN_*.py` with a linear `down_revision`, then update `docs/er-diagram.md` (and re-render the PNG) and `docs/api-spec.md` for any API change.

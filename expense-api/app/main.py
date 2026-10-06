@@ -7,8 +7,9 @@ from fastapi.openapi.docs import get_swagger_ui_html
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
-from app.auth import require_user
+from app.auth import current_user_id, require_user
 from app.db import get_engine
 from app.routers import accounts, auth, categorize, ktc, receipts, reconcile, rules, sync, transactions, users
 
@@ -70,27 +71,31 @@ class EmailSourceUpdate(BaseModel):
 
 
 @protected.get("/email-sources")
-def list_email_sources():
+def list_email_sources(uid: int = Depends(current_user_id)):
     with get_engine().connect() as conn:
         rows = conn.execute(text(
             "SELECT id, source, gmail_label, sender_filter, account_id, is_active "
-            "FROM ledger.email_sources ORDER BY id"))
+            "FROM ledger.email_sources WHERE user_id = :uid ORDER BY id"), {"uid": uid})
         return [dict(r._mapping) for r in rows]
 
 
 @protected.put("/email-sources/{source}")
-def update_email_source(source: str, body: EmailSourceUpdate):
+def update_email_source(source: str, body: EmailSourceUpdate, uid: int = Depends(current_user_id)):
     label = (body.gmail_label or "").strip() or None
     if body.is_active and not label:
         raise HTTPException(status_code=422, detail="gmail_label is required to activate a source")
-    with get_engine().begin() as conn:
-        row = conn.execute(text(
-            "UPDATE ledger.email_sources SET gmail_label = :label, sender_filter = :sender, "
-            "account_id = :account, is_active = :active, updated_at = now() "
-            "WHERE source = :source "
-            "RETURNING id, source, gmail_label, sender_filter, account_id, is_active"),
-            {"label": label, "sender": (body.sender_filter or "").strip() or None,
-             "account": body.account_id, "active": body.is_active, "source": source}).first()
+    try:
+        with get_engine().begin() as conn:
+            row = conn.execute(text(
+                "UPDATE ledger.email_sources SET gmail_label = :label, sender_filter = :sender, "
+                "account_id = :account, is_active = :active, updated_at = now() "
+                "WHERE source = :source AND user_id = :uid "
+                "RETURNING id, source, gmail_label, sender_filter, account_id, is_active"),
+                {"label": label, "sender": (body.sender_filter or "").strip() or None,
+                 "account": body.account_id, "active": body.is_active, "source": source, "uid": uid}).first()
+    except IntegrityError:
+        # the (account_id, user_id) foreign key: not one of this user's accounts
+        raise HTTPException(status_code=422, detail=f"account {body.account_id} does not exist")
     if row is None:
         raise HTTPException(status_code=404, detail=f"Unknown source '{source}'")
     return dict(row._mapping)

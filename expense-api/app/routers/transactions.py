@@ -3,9 +3,10 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Literal, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from app.auth import current_user_id
 from app.db import get_engine
 from ledger import reports
 from ledger import transactions as txns
@@ -33,17 +34,18 @@ def _run(fn):
 @router.get("/transactions")
 def list_transactions(status: Optional[Literal["pending", "confirmed", "ignored"]] = None,
                       account_id: Optional[int] = None, month: Optional[str] = None,
-                      limit: int = Query(200, ge=1, le=1000), offset: int = Query(0, ge=0)):
+                      limit: int = Query(200, ge=1, le=1000), offset: int = Query(0, ge=0),
+                      uid: int = Depends(current_user_id)):
     """Root transactions newest first, each with its descendants under `children`."""
     with get_engine().connect() as conn:
-        return txns.list_trees(conn, status=status, account_id=account_id, month=_month(month),
+        return txns.list_trees(conn, uid, status=status, account_id=account_id, month=_month(month),
                                limit=limit, offset=offset)
 
 
 @router.get("/transactions/{txn_id}")
-def get_transaction(txn_id: int):
+def get_transaction(txn_id: int, uid: int = Depends(current_user_id)):
     with get_engine().connect() as conn:
-        return _run(lambda: txns.get_one(conn, txn_id))
+        return _run(lambda: txns.get_one(conn, uid, txn_id))
 
 
 class TransactionPatch(BaseModel):
@@ -55,12 +57,12 @@ class TransactionPatch(BaseModel):
 
 
 @router.patch("/transactions/{txn_id}")
-def patch_transaction(txn_id: int, body: TransactionPatch):
+def patch_transaction(txn_id: int, body: TransactionPatch, uid: int = Depends(current_user_id)):
     """Only the fields sent are changed. category_id = expense in that category; transfer_account_id =
     transfer to one of the user's accounts (not counted as an expense); remember=false = never learn
     a rule for this payee."""
     with get_engine().begin() as conn:
-        return _run(lambda: txns.update(conn, txn_id, category_id=body.category_id,
+        return _run(lambda: txns.update(conn, uid, txn_id, category_id=body.category_id,
                                         transfer_account_id=body.transfer_account_id, description=body.description,
                                         status=body.status, remember=body.remember, fields=body.model_fields_set))
 
@@ -71,9 +73,9 @@ class ConfirmRequest(BaseModel):
 
 
 @router.post("/transactions/confirm")
-def confirm_transactions(body: ConfirmRequest):
+def confirm_transactions(body: ConfirmRequest, uid: int = Depends(current_user_id)):
     with get_engine().begin() as conn:  # confirm + Merchant Memory in one DB transaction (T3.4)
-        return _run(lambda: txns.confirm(conn, ids=body.ids, all_pending=body.all))
+        return _run(lambda: txns.confirm(conn, uid, ids=body.ids, all_pending=body.all))
 
 
 class ManualTransaction(BaseModel):
@@ -88,12 +90,12 @@ class ManualTransaction(BaseModel):
 
 
 @router.post("/transactions", status_code=201)
-def create_transaction(body: ManualTransaction):
+def create_transaction(body: ManualTransaction, uid: int = Depends(current_user_id)):
     with get_engine().begin() as conn:
-        return _run(lambda: txns.create_manual(conn, **body.model_dump()))
+        return _run(lambda: txns.create_manual(conn, uid, **body.model_dump()))
 
 
 @router.get("/reports/summary")
-def summary(month: str):
+def summary(month: str, uid: int = Depends(current_user_id)):
     with get_engine().connect() as conn:
-        return reports.monthly_summary(conn, _month(month))
+        return reports.monthly_summary(conn, uid, _month(month))

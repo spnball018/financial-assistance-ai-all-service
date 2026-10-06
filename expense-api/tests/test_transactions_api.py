@@ -29,9 +29,9 @@ def add(db, key, merchant, amount="100", *, parent=None, node="payment", src="no
         when=datetime(2026, 9, 15, 5, 0, tzinfo=TZ), status="pending", kind="expense"):
     with db.begin() as conn:
         return conn.execute(text(
-            "INSERT INTO ledger.transactions (account_id, parent_id, node_type, kind, counter_account_id, status, "
+            "INSERT INTO ledger.transactions (user_id, account_id, parent_id, node_type, kind, counter_account_id, status, "
             "amount, occurred_at, source, dedup_key, merchant_raw, merchant_key, category_id, category_source) "
-            "VALUES (1, :p, :n, :kind, CASE WHEN :kind = 'transfer' THEN 2 END, :st, :a, :w, 'kbank_email', :k, "
+            "VALUES (1, 1, :p, :n, :kind, CASE WHEN :kind = 'transfer' THEN 2 END, :st, :a, :w, 'kbank_email', :k, "
             ":m, lower(:m), :c, :s) RETURNING id"),
             {"p": parent, "n": node, "a": Decimal(amount), "w": when, "k": key, "m": merchant, "c": cat_id,
              "s": src, "st": status, "kind": kind}).scalar()

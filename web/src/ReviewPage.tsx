@@ -136,7 +136,10 @@ export function ReviewPage({ categories, accounts }: { categories: Category[]; a
       });
       await load();
     } catch (e) {
-      const text = e instanceof ApiError && e.status === 409 ? "กำลังดึงอีเมลอยู่แล้ว รอสักครู่" : (e as Error).message;
+      const busy = e instanceof ApiError && e.status === 409;
+      const text = busy && e.message.includes("Gmail")
+        ? "บัญชีนี้ยังเชื่อม Gmail ไม่ได้ (กำลังทำ) ตอนนี้บันทึกรายการเองในหน้า บันทึกเอง ได้"
+        : busy ? "กำลังดึงอีเมลอยู่แล้ว รอสักครู่" : (e as Error).message;
       setMessage({ kind: "error", text });
     } finally {
       setSyncing(false);

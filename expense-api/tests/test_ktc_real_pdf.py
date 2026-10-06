@@ -51,11 +51,11 @@ def test_real_statement_saves_once(real, db):
     email, ctx = real
     res = ktc.parse(email, ctx)
     with db.begin() as conn:
-        rid = repo.insert_raw_email(conn, "ktc_pdf", "financial-ktc-[card]", {"id": "ktc-real", "subject": "s"})
+        rid = repo.insert_raw_email(conn, 1, "ktc_pdf", "financial-ktc-[card]", {"id": "ktc-real", "subject": "s"})
         email.raw_email_id = rid
-        n, d = repo.insert_tree(conn, res.nodes[0], account_id=2, source="ktc_pdf", raw_email=email)
+        n, d = repo.insert_tree(conn, res.nodes[0], user_id=1, account_id=2, source="ktc_pdf", raw_email=email)
         assert d == 0 and n == 1 + len(res.nodes[0].children)
-        assert repo.insert_tree(conn, res.nodes[0], account_id=2, source="ktc_pdf", raw_email=email) == (0, 1)
+        assert repo.insert_tree(conn, res.nodes[0], user_id=1, account_id=2, source="ktc_pdf", raw_email=email) == (0, 1)
     with db.connect() as conn:
         assert conn.execute(text("SELECT needs_review FROM ledger.transactions WHERE node_type = 'statement'")).scalar() is False
         total = conn.execute(text("SELECT sum(amount) FROM ledger.transactions WHERE node_type = 'statement_line'")).scalar()

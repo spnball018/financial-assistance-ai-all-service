@@ -30,11 +30,12 @@ def rule_key(merchant_key: Optional[str], to_account: Optional[str] = None) -> O
     return f"{merchant_key}|{d[-4:]}" if len(d) >= 4 else merchant_key
 
 
-def lookup(conn, keys: list[str]) -> dict[str, Rule]:
+def lookup(conn, uid: int, keys: list[str]) -> dict[str, Rule]:
     if not keys:
         return {}
     rows = conn.execute(text("SELECT merchant_key, action, category_id, counter_account_id "
-                             "FROM ledger.merchant_memory WHERE merchant_key = ANY(:k)"), {"k": list(set(keys))})
+                             "FROM ledger.merchant_memory WHERE user_id = :u AND merchant_key = ANY(:k)"),
+                        {"u": uid, "k": list(set(keys))})
     return {r.merchant_key: Rule(r.action, r.category_id, r.counter_account_id) for r in rows}
 
 
@@ -46,45 +47,47 @@ def find(rules: dict[str, Rule], merchant_key: Optional[str], to_account: Option
     return rules.get(specific) or rules.get(merchant_key)
 
 
-def remember(conn, merchant_key: str, category_id: Optional[int] = None, *,
+def remember(conn, uid: int, merchant_key: str, category_id: Optional[int] = None, *,
              counter_account_id: Optional[int] = None, action: str = "category", to_account: Optional[str] = None) -> None:
     """Upsert a rule; the latest choice wins. Call inside the confirm's DB transaction.
     Category and ask rules are per payee; transfer rules are per payee + destination."""
     key = rule_key(merchant_key, to_account) if action == "transfer" else merchant_key
     conn.execute(text(
-        "INSERT INTO ledger.merchant_memory (merchant_key, action, category_id, counter_account_id) "
-        "VALUES (:k, :a, :c, :t) "
-        "ON CONFLICT (merchant_key) DO UPDATE SET action = EXCLUDED.action, category_id = EXCLUDED.category_id, "
+        "INSERT INTO ledger.merchant_memory (user_id, merchant_key, action, category_id, counter_account_id) "
+        "VALUES (:u, :k, :a, :c, :t) "
+        "ON CONFLICT (user_id, merchant_key) DO UPDATE SET action = EXCLUDED.action, category_id = EXCLUDED.category_id, "
         "counter_account_id = EXCLUDED.counter_account_id, "
         "hit_count = ledger.merchant_memory.hit_count + 1, last_confirmed_at = now()"),
-        {"k": key, "a": action, "c": category_id if action == "category" else None,
+        {"u": uid, "k": key, "a": action, "c": category_id if action == "category" else None,
          "t": counter_account_id if action == "transfer" else None})
 
 
-def is_ask(conn, merchant_key: Optional[str]) -> bool:
+def is_ask(conn, uid: int, merchant_key: Optional[str]) -> bool:
     if not merchant_key:
         return False
     return bool(conn.execute(text("SELECT EXISTS (SELECT 1 FROM ledger.merchant_memory "
-                                  "WHERE merchant_key = :k AND action = 'ask')"), {"k": merchant_key}).scalar())
+                                  "WHERE user_id = :u AND merchant_key = :k AND action = 'ask')"),
+                             {"u": uid, "k": merchant_key}).scalar())
 
 
-def set_ask(conn, merchant_key: str, ask: bool) -> None:
+def set_ask(conn, uid: int, merchant_key: str, ask: bool) -> None:
     """ask=True: never remember this payee (drops any learned rules for it). ask=False: lift that."""
     if ask:
-        conn.execute(text("DELETE FROM ledger.merchant_memory WHERE merchant_key LIKE :p"),
-                     {"p": merchant_key.replace("%", r"\%").replace("_", r"\_") + "|%"})
-        remember(conn, merchant_key, action="ask")
+        conn.execute(text("DELETE FROM ledger.merchant_memory WHERE user_id = :u AND merchant_key LIKE :p"),
+                     {"u": uid, "p": merchant_key.replace("%", r"\%").replace("_", r"\_") + "|%"})
+        remember(conn, uid, merchant_key, action="ask")
     else:
-        conn.execute(text("DELETE FROM ledger.merchant_memory WHERE merchant_key = :k AND action = 'ask'"),
-                     {"k": merchant_key})
+        conn.execute(text("DELETE FROM ledger.merchant_memory WHERE user_id = :u AND merchant_key = :k "
+                          "AND action = 'ask'"), {"u": uid, "k": merchant_key})
 
 
-def own_account_for(conn, to_account: Optional[str], from_account_id: int) -> Optional[int]:
+def own_account_for(conn, uid: int, to_account: Optional[str], from_account_id: int) -> Optional[int]:
     """The user's account whose masked_ref matches the end of the destination number, if exactly one."""
     d = digits(to_account)
     if len(d) < 4:
         return None
     rows = conn.execute(text("SELECT id, masked_ref FROM ledger.accounts "
-                             "WHERE masked_ref IS NOT NULL AND id <> :me"), {"me": from_account_id}).all()
+                             "WHERE user_id = :u AND masked_ref IS NOT NULL AND id <> :me"),
+                        {"u": uid, "me": from_account_id}).all()
     hits = [r.id for r in rows if len(digits(r.masked_ref)) >= 4 and d.endswith(digits(r.masked_ref))]
     return hits[0] if len(hits) == 1 else None

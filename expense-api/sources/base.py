@@ -52,7 +52,7 @@ class TxnNode:
     kind: Kind
     amount: Decimal
     occurred_at: datetime  # tz-aware, Asia/Bangkok
-    dedup_key: str  # globally unique, e.g. "ktc:stmt:<...>"
+    dedup_key: str  # unique per user, e.g. "ktc:stmt:<...>"
     has_time: bool = True
     merchant_raw: Optional[str] = None
     description: Optional[str] = None

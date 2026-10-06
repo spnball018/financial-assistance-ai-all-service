@@ -15,9 +15,10 @@ def root() -> Path:
     return Path(os.environ.get("RECEIPTS_DIR") or default).resolve()
 
 
-def save(data: bytes, sha256: str, mime_type: str, when: datetime) -> str:
-    """Write the image as YYYY/MM/<sha256>.<ext> (atomic rename) and return that relative path."""
-    rel = f"{when:%Y}/{when:%m}/{sha256}.{EXT[mime_type]}"
+def save(data: bytes, sha256: str, mime_type: str, when: datetime, user_id: int) -> str:
+    """Write the image as u<user>/YYYY/MM/<sha256>.<ext> (atomic rename) and return that relative path.
+    (Files saved before multi-user have no u<user>/ prefix; they belong to user 1.)"""
+    rel = f"u{user_id}/{when:%Y}/{when:%m}/{sha256}.{EXT[mime_type]}"
     path = root() / rel
     path.parent.mkdir(parents=True, exist_ok=True)
     if not path.exists():
