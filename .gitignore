@@ -50,6 +50,9 @@ financial-assistance-ai-gmail-service/token.json
 # docker compose secrets
 /.env
 
+# receipt photos and other local data (mounted into containers)
+/data/
+
 # expense-api
 expense-api/.env
 expense-api/tests/fixtures/*

@@ -25,7 +25,8 @@ def q(db, sql, **p):
 
 
 @pytest.fixture
-def env(db, monkeypatch):
+def env(db, monkeypatch, tmp_path):
+    monkeypatch.setenv("RECEIPTS_DIR", str(tmp_path))
     with db.begin() as conn:
         conn.execute(text("TRUNCATE ledger.receipts RESTART IDENTITY CASCADE"))
         pay = conn.execute(text(
@@ -59,6 +60,12 @@ def test_upload_reads_and_proposes(env):
     assert Decimal(str(rec["items_total"])) == Decimal("275") and Decimal(str(rec["difference"])) == Decimal("-25")
     img = api.get(f"/receipts/{rec['id']}/image")
     assert img.status_code == 200 and img.content == PNG and img.headers["content-type"] == "image/png"
+    # the image is a file under RECEIPTS_DIR; the DB keeps only its relative path
+    import os
+    assert rec["storage_uri"].endswith(f"{rec['sha256']}.png")
+    assert open(os.path.join(os.environ["RECEIPTS_DIR"], rec["storage_uri"]), "rb").read() == PNG
+    assert q(db, "SELECT count(*) FROM information_schema.columns WHERE table_schema = 'ledger' "
+                 "AND table_name = 'receipts' AND column_name = 'content'") == 0
     assert upload(api, pay).status_code == 409                      # same image twice
     assert upload(api, pay, b"x", "application/pdf").status_code == 422
 
@@ -107,3 +114,19 @@ def test_only_pending_unsplit_expense(env):
     db, api, pay, _ = env
     api.post("/transactions/confirm", json={"ids": [pay]})
     assert upload(api, pay).status_code == 422
+
+
+def test_storage_refuses_paths_outside_the_folder(tmp_path, monkeypatch):
+    from receipts import storage
+    monkeypatch.setenv("RECEIPTS_DIR", str(tmp_path / "r"))
+    (tmp_path / "secret.txt").write_text("x")
+    with pytest.raises(FileNotFoundError):
+        storage.load("../secret.txt")
+
+
+def test_missing_file_is_404(env):
+    db, api, pay, _ = env
+    rec = upload(api, pay).json()
+    import os
+    os.remove(os.path.join(os.environ["RECEIPTS_DIR"], rec["storage_uri"]))
+    assert api.get(f"/receipts/{rec['id']}/image").status_code == 404

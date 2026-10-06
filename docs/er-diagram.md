@@ -1,6 +1,6 @@
 # ER diagram: schema `ledger`
 
-สร้างจาก DB จริง (migration 0009, 2026-10-05) ถ้าเพิ่ม migration ให้อัปเดตไฟล์นี้ด้วย ส่วนตาราง `alembic_version` ไม่ได้แสดง
+สร้างจาก DB จริง (migration 0010, 2026-10-06) ถ้าเพิ่ม migration ให้อัปเดตไฟล์นี้ด้วย ส่วนตาราง `alembic_version` ไม่ได้แสดง
 
 ภาพ PNG: [er-diagram.png](er-diagram.png) (render จาก Mermaid ข้างล่าง ใช้ดูใน editor ที่ไม่รองรับ Mermaid ถ้าแก้ diagram ให้ render ใหม่ด้วย `npx @mermaid-js/mermaid-cli -i <ไฟล์ .mmd> -o docs/er-diagram.png -w 2400 -b white`)
 
@@ -134,8 +134,7 @@ erDiagram
     receipts {
         bigint id PK
         bigint transaction_id FK "รายการจ่ายที่แนบ"
-        bytea content "รูป (หรือ storage_uri)"
-        text storage_uri
+        text storage_uri "path ของไฟล์ใน RECEIPTS_DIR (ไม่เก็บรูปใน DB)"
         text mime_type
         text sha256 UK
         timestamptz uploaded_at

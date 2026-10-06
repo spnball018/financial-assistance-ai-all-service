@@ -10,12 +10,15 @@ from typing import Optional
 
 from sqlalchemy import text
 
+from datetime import datetime, timezone
+
 from categorize.service import _leaf_categories
 from ledger.transactions import Invalid, NotFound, check_category, get_one
+from receipts import storage
 from receipts.ocr import ReceiptReader
 
 MAX_BYTES = 10 * 1024 * 1024
-MIME_TYPES = {"image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"}
+MIME_TYPES = set(storage.EXT)
 
 
 class Conflict(Exception):
@@ -39,7 +42,6 @@ def _splittable(conn, txn_id: int) -> dict:
 
 def _view(row, payment_amount: Optional[Decimal]) -> dict:
     d = dict(row._mapping)
-    d.pop("content", None)
     reading = d.get("ocr_result") or {}
     items_total = sum(Decimal(str(i["amount"])) for i in reading.get("items", []))
     adj_total = sum(Decimal(str(a["amount"])) for a in reading.get("adjustments", []))
@@ -51,8 +53,8 @@ def _view(row, payment_amount: Optional[Decimal]) -> dict:
     return d
 
 
-_COLS = ("id, transaction_id, mime_type, sha256, uploaded_at, ocr_status, ocr_result, ocr_model, ocr_error, "
-         "applied_at")
+_COLS = ("id, transaction_id, storage_uri, mime_type, sha256, uploaded_at, ocr_status, ocr_result, ocr_model, "
+         "ocr_error, applied_at")
 
 
 def get_receipt(conn, receipt_id: int) -> dict:
@@ -73,14 +75,18 @@ def list_for_transaction(conn, txn_id: int) -> list[dict]:
 
 
 def image(conn, receipt_id: int) -> tuple[bytes, str]:
-    row = conn.execute(text("SELECT content, mime_type FROM ledger.receipts WHERE id = :id"), {"id": receipt_id}).first()
-    if row is None or row.content is None:
+    row = conn.execute(text("SELECT storage_uri, mime_type FROM ledger.receipts WHERE id = :id"),
+                       {"id": receipt_id}).first()
+    if row is None:
         raise NotFound(receipt_id)
-    return bytes(row.content), row.mime_type
+    try:
+        return storage.load(row.storage_uri), row.mime_type
+    except FileNotFoundError:
+        raise NotFound(receipt_id)  # the file was moved or deleted from RECEIPTS_DIR
 
 
 def upload(conn, txn_id: int, data: bytes, mime_type: str) -> dict:
-    """Store the photo (OCR runs separately, outside this DB transaction)."""
+    """Write the photo to RECEIPTS_DIR and record its path (OCR runs separately, outside this DB transaction)."""
     _splittable(conn, txn_id)
     if mime_type not in MIME_TYPES:
         raise Invalid(f"unsupported image type {mime_type}; use JPEG, PNG, WebP or HEIC")
@@ -90,9 +96,11 @@ def upload(conn, txn_id: int, data: bytes, mime_type: str) -> dict:
     existing = conn.execute(text("SELECT id, transaction_id FROM ledger.receipts WHERE sha256 = :h"), {"h": digest}).first()
     if existing:
         raise Conflict(f"this image is already uploaded as receipt {existing.id}")
-    rid = conn.execute(text("INSERT INTO ledger.receipts (transaction_id, content, mime_type, sha256) "
-                            "VALUES (:t, :c, :m, :h) RETURNING id"),
-                       {"t": txn_id, "c": data, "m": mime_type, "h": digest}).scalar()
+    # the file is named by its hash, so a write left behind by a failed insert is harmless
+    rel = storage.save(data, digest, mime_type, datetime.now(timezone.utc))
+    rid = conn.execute(text("INSERT INTO ledger.receipts (transaction_id, storage_uri, mime_type, sha256) "
+                            "VALUES (:t, :u, :m, :h) RETURNING id"),
+                       {"t": txn_id, "u": rel, "m": mime_type, "h": digest}).scalar()
     return get_receipt(conn, rid)
 
 

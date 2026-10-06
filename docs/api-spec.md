@@ -202,12 +202,12 @@ Response
 
 ### ใบเสร็จ (T6.5)
 
-แนบรูปใบเสร็จกับรายการจ่าย (`pending`, `expense`, ยังไม่มีลูก) → Gemini อ่านรายการสินค้าพร้อมเสนอหมวด → ผู้ใช้แก้แล้วสั่งแยก ระบบสร้างลูก `receipt_item` ทีละรายการ และ `adjustment` 1 บรรทัดถ้ายอดรวมไม่เท่ายอดจ่าย (ส่วนลด, ปัดเศษ, บรรทัดที่อ่านไม่ได้) ทำให้ผลรวมของลูกเท่ากับแม่เสมอ รายงานนับที่ลูก ส่วนยอดบัญชีนับที่แม่ จึงไม่นับซ้ำ รูปเก็บใน Postgres (`ledger.receipts.content`)
+แนบรูปใบเสร็จกับรายการจ่าย (`pending`, `expense`, ยังไม่มีลูก) → Gemini อ่านรายการสินค้าพร้อมเสนอหมวด → ผู้ใช้แก้แล้วสั่งแยก ระบบสร้างลูก `receipt_item` ทีละรายการ และ `adjustment` 1 บรรทัดถ้ายอดรวมไม่เท่ายอดจ่าย (ส่วนลด, ปัดเศษ, บรรทัดที่อ่านไม่ได้) ทำให้ผลรวมของลูกเท่ากับแม่เสมอ รายงานนับที่ลูก ส่วนยอดบัญชีนับที่แม่ จึงไม่นับซ้ำ **รูปเก็บเป็นไฟล์** ใน `RECEIPTS_DIR` (ค่าเริ่มต้น `<repo>/data/receipts` ซึ่ง docker-compose mount เข้า container) ตั้งชื่อเป็น `YYYY/MM/<sha256>.<ext>` ส่วน DB เก็บแค่ path นั้นใน `storage_uri`
 
 #### ✅ `POST /transactions/{id}/receipts`
 multipart `file` (JPEG/PNG/WebP/HEIC, ไม่เกิน 10 MB) บันทึกรูปแล้วอ่านทันที (ราว 4 วินาที)
 ```json
-{"id": 1, "transaction_id": 140, "mime_type": "image/jpeg", "ocr_status": "done", "ocr_model": "gemini-3.5-flash-lite",
+{"id": 1, "transaction_id": 140, "storage_uri": "2026/10/3f2a...e1.jpg", "mime_type": "image/jpeg", "ocr_status": "done", "ocr_model": "gemini-3.5-flash-lite",
  "ocr_result": {"merchant": "...", "total": 339.0,
    "items": [{"name": "นมสดจืด 1L", "quantity": 2, "amount": 90.0, "category_id": 8, "confidence": 0.95}],
    "adjustments": [{"name": "ส่วนลดสมาชิก", "amount": -20.0}]},
@@ -216,7 +216,7 @@ multipart `file` (JPEG/PNG/WebP/HEIC, ไม่เกิน 10 MB) บันท�
 Errors: `409` รูปเดิมซ้ำ (เทียบ sha256) · `422` ชนิดไฟล์/ขนาดผิด หรือรายการแยกไม่ได้ · `503` ไม่ได้ตั้ง `GEMINI_API_KEY` (รูปถูกเก็บแล้ว อ่านทีหลังด้วย `/receipts/{id}/read`) ถ้าอ่านไม่สำเร็จ `ocr_status = failed` และ `ocr_error` เป็นชื่อ exception
 
 #### ✅ `GET /transactions/{id}/receipts` · `GET /receipts/{id}` · `GET /receipts/{id}/image` · `POST /receipts/{id}/read`
-ดูรายการใบเสร็จของรายการจ่าย, ดูใบเดียว, ดูรูป และสั่งอ่านใหม่ (`RECEIPT_MODEL` ใช้แทน `GEMINI_MODEL` ได้)
+ดูรายการใบเสร็จของรายการจ่าย, ดูใบเดียว, ดูรูป (`404` ถ้าไฟล์ถูกย้ายหรือลบออกจากโฟลเดอร์) และสั่งอ่านใหม่ (`RECEIPT_MODEL` ใช้แทน `GEMINI_MODEL` ได้)
 
 #### ✅ `POST /receipts/{id}/apply`
 ```json

@@ -87,7 +87,11 @@ services:
       - GMAIL_SERVICE_URL=http://gmail-service:8000
       - CREDIT_CARD_STATEMENT_SERVICE_URL=http://credit-card-statement-service:8000
       - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/financial
+      - RECEIPTS_DIR=/data/receipts
       - PYTHONUNBUFFERED=1
+    volumes:
+      # receipt photos; the DB stores only their path (same folder as a local venv run uses)
+      - ./data/receipts:/data/receipts
     networks:
       - financial-ai
     restart: unless-stopped
