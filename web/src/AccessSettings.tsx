@@ -1,7 +1,80 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
 import { fmtWhen } from "./format";
-import type { ApiToken, CreatedApiToken, User } from "./types";
+import type { ApiToken, CreatedApiToken, GmailStatus, User } from "./types";
+
+const GMAIL_RESULT: Record<string, { ok: boolean; text: string }> = {
+  connected: { ok: true, text: "เชื่อม Gmail แล้ว กด ดึงอีเมลใหม่ ในหน้าตรวจรายการได้เลย" },
+  denied: { ok: false, text: "ยกเลิกการเชื่อม Gmail" },
+  scope: { ok: false, text: "ต้องติ๊กให้สิทธิ์อ่าน Gmail ในหน้าของ Google ด้วย ลองเชื่อมใหม่" },
+  state: { ok: false, text: "การเชื่อมหมดเวลาหรือไม่ถูกต้อง ลองใหม่อีกครั้ง" },
+  config: { ok: false, text: "ระบบยังไม่ได้ตั้งค่า Google OAuth client (GOOGLE_OAUTH_CLIENT_ID / SECRET_KEY)" },
+  failed: { ok: false, text: "เชื่อม Gmail ไม่สำเร็จ ลองใหม่อีกครั้ง" },
+};
+
+export function GmailSection() {
+  const [status, setStatus] = useState<GmailStatus | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  // result of the Google round trip arrives as ?gmail=<result>; show it once, then tidy the URL
+  const [result] = useState(() => new URLSearchParams(location.search).get("gmail"));
+  const load = () => api.gmailStatus().then(setStatus, (e: Error) => setError(e.message));
+  useEffect(() => {
+    load();
+    if (result) history.replaceState(null, "", location.pathname + location.hash);
+  }, []);
+
+  const disconnect = async () => {
+    if (!confirm("ยกเลิกการเชื่อม Gmail? ระบบจะลบสิทธิ์ที่เก็บไว้และแจ้ง Google ให้ยกเลิกด้วย")) return;
+    try {
+      await api.disconnectGmail();
+      await load();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+  const msg = result ? GMAIL_RESULT[result] ?? GMAIL_RESULT.failed : null;
+  const connectHref = `/api/gmail/connect?next=${encodeURIComponent("/#settings")}`;
+
+  return (
+    <section className="settings-section">
+      <h2>Gmail ของฉัน</h2>
+      <p className="muted small">
+        ระบบอ่านอีเมลธนาคาร/บัตรจาก Gmail ของคุณเอง (สิทธิ์อ่านอย่างเดียว) สิทธิ์ที่ได้จาก Google เก็บแบบเข้ารหัส
+      </p>
+      {msg && <div className={`message ${msg.ok ? "ok" : "error"}`}>{msg.text}</div>}
+      {error && <div className="message error">{error}</div>}
+      {status && (
+        <div className="toolbar">
+          {status.connected ? (
+            <>
+              <span>
+                เชื่อมกับ <strong>{status.gmail_address}</strong>
+                <span className="muted small"> · ตั้งแต่ {fmtWhen(status.connected_at!, true)}</span>
+                {status.last_used_at && <span className="muted small"> · ใช้ล่าสุด {fmtWhen(status.last_used_at, true)}</span>}
+              </span>
+              {status.last_error && (
+                <span className="badge badge-warn">
+                  {status.last_error === "expired" ? "สิทธิ์หมดอายุ ต้องเชื่อมใหม่" : "ถอดรหัสไม่ได้ ต้องเชื่อมใหม่"}
+                </span>
+              )}
+              <div className="spacer" />
+              <a className="button" href={connectHref}>เชื่อมใหม่</a>
+              <button className="link" onClick={disconnect}>ยกเลิกการเชื่อม</button>
+            </>
+          ) : (
+            <>
+              <span className="muted">
+                {status.uses_token_json ? "ใช้ token.json ของ gmail-service อยู่ (เชื่อมผ่านหน้าเว็บได้ จะได้จัดการเองได้)" : "ยังไม่ได้เชื่อม"}
+              </span>
+              <div className="spacer" />
+              <a className="button primary" href={connectHref}>เชื่อม Gmail</a>
+            </>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
 
 const EXPIRY_OPTIONS: { label: string; days: number | null }[] = [
   { label: "30 วัน", days: 30 },

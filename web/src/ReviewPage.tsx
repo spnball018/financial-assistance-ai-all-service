@@ -138,7 +138,7 @@ export function ReviewPage({ categories, accounts }: { categories: Category[]; a
     } catch (e) {
       const busy = e instanceof ApiError && e.status === 409;
       const text = busy && e.message.includes("Gmail")
-        ? "บัญชีนี้ยังเชื่อม Gmail ไม่ได้ (กำลังทำ) ตอนนี้บันทึกรายการเองในหน้า บันทึกเอง ได้"
+        ? "ยังไม่ได้เชื่อม Gmail หรือสิทธิ์หมดอายุ เชื่อม Gmail ได้ที่ ตั้งค่า → Gmail ของฉัน"
         : busy ? "กำลังดึงอีเมลอยู่แล้ว รอสักครู่" : (e as Error).message;
       setMessage({ kind: "error", text });
     } finally {

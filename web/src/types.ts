@@ -192,3 +192,13 @@ export interface ApiToken {
 export interface CreatedApiToken extends ApiToken {
   token: string;
 }
+
+export interface GmailStatus {
+  connected: boolean;
+  /** user 1 without a connection still reads gmail-service's token.json */
+  uses_token_json: boolean;
+  gmail_address?: string;
+  connected_at?: string;
+  last_used_at?: string | null;
+  last_error?: "expired" | "secret_key" | null;
+}

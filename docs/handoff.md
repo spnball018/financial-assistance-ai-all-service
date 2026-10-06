@@ -13,8 +13,8 @@
   - สรุปรายเดือน: รายจ่าย, รายรับ, สุทธิ, ยอดโอน
   - ยอดคงเหลือ: ยอดยกมา และเทียบยอดกับอีเมล KBank
   - ตั้งค่า: บัญชี, แหล่งอีเมล, รหัส PDF KTC, กฎที่จำไว้
-- **เข้าสู่ระบบ (P7.1)**: Google sign-in ทุกหน้า, API token (Bearer) สำหรับสคริปต์/Bruno, หลายผู้ใช้ (admin เพิ่มสมาชิกในหน้าตั้งค่า), Caddy ทำ HTTPS สำหรับ public IP (`--profile public`) · ข้อมูลแยกต่อผู้ใช้แล้ว (P7.2) แต่สมาชิกยัง sync Gmail ของตัวเองไม่ได้ (P7.3) ตอนนี้บันทึกเองได้อย่างเดียว
-- **เทสต์**: expense-api 153 ข้อ (+2 ข้อที่ต้องมี PDF จริง) และ credit-card-statement-service 8 ข้อ
+- **เข้าสู่ระบบ (P7.1)**: Google sign-in ทุกหน้า, API token (Bearer) สำหรับสคริปต์/Bruno, หลายผู้ใช้ (admin เพิ่มสมาชิกในหน้าตั้งค่า), Caddy ทำ HTTPS สำหรับ public IP (`--profile public`) · ข้อมูลแยกต่อผู้ใช้ (P7.2) · แต่ละคนเชื่อม Gmail ของตัวเองในหน้าตั้งค่า (P7.3, refresh token เข้ารหัสใน DB)
+- **เทสต์**: expense-api 164 ข้อ (+2 ข้อที่ต้องมี PDF จริง) และ credit-card-statement-service 8 ข้อ
 
 ## สิ่งที่ไม่อยู่ใน git (ต้องย้ายเอง)
 
@@ -22,7 +22,7 @@
 |---|---|---|
 | `credentials.json` (root) | OAuth client ของ Gmail | สร้างใหม่ใน Google Cloud แล้วรัน `gmail-auth` |
 | `gmail-service/token.json` | token ที่ consent แล้ว (scope `gmail.modify`) | รัน `docker compose --profile manual up --build gmail-auth` ใหม่ |
-| `expense-api/.env` | `SECRET_KEY`, `GEMINI_API_KEY`, `KTC_PDF_PASSWORD`, sign-in (`AUTH_MODE`, `ADMIN_EMAILS`, `PUBLIC_BASE_URL`, `GOOGLE_OAUTH_CLIENT_ID/SECRET`) | ต้องตั้งใหม่ **และ `SECRET_KEY` ต้องเป็นค่าเดิมถ้าย้าย DB ไปด้วย** ไม่งั้นถอดรหัส PDF ของ KTC ที่เก็บไว้ไม่ได้ (ตั้งรหัสใหม่ในหน้าตั้งค่าแทนได้) |
+| `expense-api/.env` | `SECRET_KEY` (**ถอดรหัส Gmail ของทุกคนและรหัส PDF KTC** ถ้าหายทุกคนต้องเชื่อม Gmail ใหม่ ห้ามเก็บไว้ที่เดียวกับ DB dump), `GEMINI_API_KEY`, `KTC_PDF_PASSWORD`, sign-in (`AUTH_MODE`, `ADMIN_EMAILS`, `PUBLIC_BASE_URL`, `GOOGLE_OAUTH_CLIENT_ID/SECRET`) | ต้องตั้งใหม่ **และ `SECRET_KEY` ต้องเป็นค่าเดิมถ้าย้าย DB ไปด้วย** ไม่งั้นถอดรหัส PDF ของ KTC ที่เก็บไว้ไม่ได้ (ตั้งรหัสใหม่ในหน้าตั้งค่าแทนได้) |
 | `.env` (root) | `POSTGRES_PASSWORD` (ตอนนี้ยังไม่มี ใช้ค่าเริ่มต้น `postgres`), `DOMAIN` (เครื่อง public) | ไม่ต้องทำอะไร (เครื่อง public ต้องตั้งทั้งสองค่า) |
 | `expense-api/tests/fixtures/` | อีเมล KBank 7 ฉบับ + PDF KTC 1 ฉบับ (ข้อมูลจริง) | เทสต์ที่ใช้ fixture จะ skip เอง |
 | `data/receipts/` | รูปใบเสร็จ (ตอนนี้ยังว่าง) | — |
@@ -81,11 +81,11 @@ cd ../web && npm run build
 - **Gemini**: `gemini-2.5-flash` ตอบ 404 สำหรับผู้ใช้ใหม่ และรุ่น Flash ตัวเต็มตอบ 503 บน free tier บ่อย adapter retry ให้แล้ว เปลี่ยนรุ่นได้ด้วย `GEMINI_MODEL`
 - **sync**: แหล่งที่เพิ่งเปิดดึงย้อน 90 วัน รอบแรกของ KBank ใช้ราว 2 นาที
 - **branch `ktc-track`**: merge เข้า `main` หมดแล้ว ลบได้
-- **migration ล่าสุดคือ 0012** (ข้อมูลต่อผู้ใช้) · DB จริงบนเครื่องเดิมยังอยู่ที่ 0010 (`alembic upgrade head` ตอน start container หรือรันเองก่อน start uvicorn): ถ้าเพิ่ม migration ต้องอัปเดต [er-diagram.md](er-diagram.md) (render PNG ใหม่) และ [api-spec.md](api-spec.md)
+- **migration ล่าสุดคือ 0013** (Gmail ต่อผู้ใช้) · DB จริงบนเครื่องเดิมยังอยู่ที่ 0010 (`alembic upgrade head` ตอน start container หรือรันเองก่อน start uvicorn): ถ้าเพิ่ม migration ต้องอัปเดต [er-diagram.md](er-diagram.md) (render PNG ใหม่) และ [api-spec.md](api-spec.md)
 
 ## งานถัดไป
 
-1. **P7.3 Gmail ต่อผู้ใช้** เชื่อม Gmail ของแต่ละคนจากหน้าเว็บ (ดูข้อจำกัด test user / 7 วันในแผน) แล้วเอาข้อจำกัด `GMAIL_SERVICE_OWNER` ใน `app/routers/sync.py` ออก
+1. **ลองเชื่อม Google จริง** (sign-in และ Gmail) ตามขั้นตอนใน README หัวข้อ Sign-in
 2. **T1.3 marketplace**: label `marketplace-shopee`, `marketplace-lazada`, `marketplace-aliexpress`, `marketplace-temu`
    - เพิ่มค่า `aliexpress_email`, `temu_email` ใน CHECK ของ `email_sources.source`, `transactions.source` และ `ecommerce_orders.platform` (migration ถัดไป)
    - ดึงอีเมลตัวอย่างมาเก็บใน `expense-api/tests/fixtures/` (ผู้ใช้อนุญาตให้ดึงอีเมลจริงมาเก็บใน fixtures ที่ gitignore แล้ว)

@@ -53,7 +53,7 @@ def login(next: Optional[str] = None):
     state, nonce = pysecrets.token_urlsafe(24), pysecrets.token_urlsafe(24)
     verifier, challenge = google_oauth.new_pkce()
     try:
-        url = google_oauth.authorization_url(_redirect_uri(), state, nonce, challenge)
+        url = google_oauth.authorization_url(_redirect_uri(), state, challenge, nonce=nonce)
         flow = secrets.encrypt(json.dumps({"state": state, "nonce": nonce, "verifier": verifier,
                                            "next": _safe_next(next)}))
     except (google_oauth.OAuthError, RuntimeError) as e:

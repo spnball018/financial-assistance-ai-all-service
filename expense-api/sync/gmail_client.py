@@ -23,9 +23,11 @@ class MailClient(Protocol):
 
 
 class GmailServiceClient:
-    def __init__(self, base_url: str, *, retries: int = 5, backoff: float = 2.0,
+    def __init__(self, base_url: str, *, access_token: Optional[str] = None, retries: int = 5, backoff: float = 2.0,
                  transport: Optional[httpx.BaseTransport] = None):
-        self._http = httpx.Client(base_url=base_url.rstrip("/"), timeout=60, transport=transport)
+        """access_token: read that user's mailbox; without it gmail-service uses its token.json."""
+        headers = {"Authorization": f"Bearer {access_token}"} if access_token else {}
+        self._http = httpx.Client(base_url=base_url.rstrip("/"), timeout=60, transport=transport, headers=headers)
         self._retries = retries
         self._backoff = backoff
 

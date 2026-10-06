@@ -1,6 +1,6 @@
 # ER diagram: schema `ledger`
 
-สร้างจาก DB จริง (migration 0012, 2026-10-06) ถ้าเพิ่ม migration ให้อัปเดตไฟล์นี้ด้วย ส่วนตาราง `alembic_version` ไม่ได้แสดง
+สร้างจาก DB จริง (migration 0013, 2026-10-06) ถ้าเพิ่ม migration ให้อัปเดตไฟล์นี้ด้วย ส่วนตาราง `alembic_version` ไม่ได้แสดง
 
 ภาพ PNG: [er-diagram.png](er-diagram.png) (render จาก Mermaid ข้างล่าง ใช้ดูใน editor ที่ไม่รองรับ Mermaid ถ้าแก้ diagram ให้ render ใหม่ด้วย `npx @mermaid-js/mermaid-cli -i <ไฟล์ .mmd> -o docs/er-diagram.png -w 2400 -b white`)
 
@@ -181,6 +181,16 @@ erDiagram
         timestamptz last_login_at
     }
 
+    gmail_connections {
+        int user_id PK "FK users"
+        text gmail_address
+        text refresh_token_encrypted "Fernet (SECRET_KEY)"
+        text scopes "gmail.readonly"
+        timestamptz connected_at
+        timestamptz last_used_at
+        text last_error "expired | secret_key"
+    }
+
     auth_sessions {
         bigint id PK
         int user_id FK
@@ -222,6 +232,7 @@ erDiagram
     email_sources ||..o{ raw_emails : "source (ตรรกะ ไม่มี FK)"
     users ||--o{ accounts : "user_id (และทุกตารางข้อมูล)"
     users ||--o{ auth_sessions : "user_id"
+    users ||--o| gmail_connections : "user_id"
     users ||--o{ api_tokens : "user_id"
 ```
 
@@ -236,7 +247,7 @@ erDiagram
 | รอจับคู่ | `ecommerce_orders`, `ecommerce_order_items` | order ของ Shopee/Lazada ก่อนผูกกับรายการจ่าย (ยังไม่ได้ใช้ รอ T1.3) |
 | ใบเสร็จ | `receipts` | รูปใบเสร็จและผลที่อ่านได้ ลูกที่แยกออกมาชี้กลับด้วย `transactions.receipt_id` |
 | ความลับ | `settings` | ค่าที่เข้ารหัส เช่น รหัส PDF ของ KTC |
-| ผู้ใช้ | `users`, `auth_sessions`, `api_tokens` | ผู้ใช้ (admin/member), session จาก Google sign-in และ API token เก็บแค่ sha256 ของความลับ |
+| ผู้ใช้ | `users`, `auth_sessions`, `api_tokens`, `gmail_connections` | ผู้ใช้ (admin/member), session จาก Google sign-in และ API token เก็บแค่ sha256 ของความลับ, Gmail ของแต่ละคน (refresh token เข้ารหัส) |
 
 ## View
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
-import { ApiTokensSection, UsersSection } from "./AccessSettings";
+import { ApiTokensSection, GmailSection, UsersSection } from "./AccessSettings";
 import { EmailSourcesSection, KtcPasswordSection, RulesSection } from "./SettingsExtras";
 import type { Me } from "./types";
 import type { Account, AccountInput, AccountType } from "./types";
@@ -178,6 +178,7 @@ export function SettingsPage({ me }: { me: Me }) {
           </tbody>
         </table>
       </div>
+      <GmailSection />
       <EmailSourcesSection accounts={accounts} />
       <KtcPasswordSection />
       <RulesSection />

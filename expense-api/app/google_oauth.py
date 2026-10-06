@@ -1,21 +1,29 @@
-"""Google OpenID Connect, authorization-code flow with PKCE (server side; the client secret never
-reaches the browser). Needs a "Web application" OAuth client whose redirect URI is
-PUBLIC_BASE_URL + /api/auth/callback. This is a different client from gmail-service's credentials.json.
+"""Google OAuth, authorization-code flow with PKCE (server side; the client secret never reaches the
+browser). One "Web application" client serves two flows:
+- sign-in (openid email profile): redirect URI PUBLIC_BASE_URL + /api/auth/callback
+- connecting a user's Gmail (gmail.readonly, offline): redirect URI PUBLIC_BASE_URL + /api/gmail/callback
 """
 import base64
 import hashlib
 import os
 import secrets
+from typing import Optional
 from urllib.parse import urlencode
 
 import httpx
 
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
+REVOKE_URL = "https://oauth2.googleapis.com/revoke"
+SIGN_IN_SCOPE = "openid email profile"
 
 
 class OAuthError(Exception):
-    """Sign-in failed; the message is safe to log (no tokens or codes)."""
+    """The message is safe to log (no tokens or codes)."""
+
+
+class InvalidGrant(OAuthError):
+    """The refresh token was revoked or expired (Testing-mode apps: after 7 days); reconnect."""
 
 
 def client_id() -> str:
@@ -38,26 +46,27 @@ def new_pkce() -> tuple[str, str]:
     return verifier, challenge
 
 
-def authorization_url(redirect_uri: str, state: str, nonce: str, challenge: str) -> str:
-    return AUTH_URL + "?" + urlencode({
+def authorization_url(redirect_uri: str, state: str, challenge: str, *, nonce: Optional[str] = None,
+                      scope: str = SIGN_IN_SCOPE, **extra: str) -> str:
+    params = {
         "client_id": client_id(),
         "redirect_uri": redirect_uri,
         "response_type": "code",
-        "scope": "openid email profile",
+        "scope": scope,
         "state": state,
-        "nonce": nonce,
         "code_challenge": challenge,
         "code_challenge_method": "S256",
         "prompt": "select_account",
-    })
+        **extra,
+    }
+    if nonce:
+        params["nonce"] = nonce
+    return AUTH_URL + "?" + urlencode(params)
 
 
-def exchange_code(code: str, redirect_uri: str, verifier: str) -> dict:
-    """Returns the verified ID token claims."""
+def _token_request(data: dict) -> dict:
     try:
-        res = httpx.post(TOKEN_URL, timeout=15, data={
-            "code": code, "client_id": client_id(), "client_secret": _client_secret(),
-            "redirect_uri": redirect_uri, "grant_type": "authorization_code", "code_verifier": verifier})
+        res = httpx.post(TOKEN_URL, timeout=15, data={"client_id": client_id(), "client_secret": _client_secret(), **data})
     except httpx.HTTPError as e:
         raise OAuthError(f"token endpoint unreachable: {type(e).__name__}") from None
     if res.status_code != 200:
@@ -66,8 +75,33 @@ def exchange_code(code: str, redirect_uri: str, verifier: str) -> dict:
             err = res.json().get("error", "?")
         except ValueError:
             err = "?"
+        if err == "invalid_grant" and data.get("grant_type") == "refresh_token":
+            raise InvalidGrant("refresh token revoked or expired")
         raise OAuthError(f"token endpoint returned {res.status_code}: {err}")
-    raw = res.json().get("id_token")
+    return res.json()
+
+
+def exchange_code_for_tokens(code: str, redirect_uri: str, verifier: str) -> dict:
+    """Raw token response: access_token, refresh_token (when offline access was granted), scope, ..."""
+    return _token_request({"code": code, "redirect_uri": redirect_uri, "grant_type": "authorization_code",
+                           "code_verifier": verifier})
+
+
+def refresh_access_token(refresh_token: str) -> str:
+    return _token_request({"refresh_token": refresh_token, "grant_type": "refresh_token"})["access_token"]
+
+
+def revoke(token: str) -> None:
+    """Best effort: the user can also remove access at myaccount.google.com/permissions."""
+    try:
+        httpx.post(REVOKE_URL, data={"token": token}, timeout=15)
+    except httpx.HTTPError:
+        pass
+
+
+def exchange_code(code: str, redirect_uri: str, verifier: str) -> dict:
+    """Sign-in: returns the verified ID token claims."""
+    raw = exchange_code_for_tokens(code, redirect_uri, verifier).get("id_token")
     if not raw:
         raise OAuthError("no id_token in token response")
     return verify_id_token(raw)

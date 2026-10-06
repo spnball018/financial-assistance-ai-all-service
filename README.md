@@ -58,9 +58,17 @@ All ports are bound to `127.0.0.1` except Caddy's. The web UI and expense-api re
    `https://money.example.com/api/auth/callback`.
 2. In `expense-api/.env`: `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `PUBLIC_BASE_URL`,
    and `ADMIN_EMAILS` (your Google address; always an admin). `SECRET_KEY` must be set too.
-3. Sign in. Add family members in **ตั้งค่า > ผู้ใช้** by their Google address. Each person will see
-   only their own data. Connecting each person's own Gmail is not built yet (P7.3), so for now only
-   user 1 (the owner of `gmail-service/token.json`) can sync; others enter transactions by hand.
+   Also add `<PUBLIC_BASE_URL>/api/gmail/callback` as a redirect URI, enable the **Gmail API** in the
+   same project, and add the scope `gmail.readonly` to the OAuth consent screen.
+3. Sign in. Add family members in **ตั้งค่า > ผู้ใช้** by their Google address. Each person sees only
+   their own data and connects their own Gmail in **ตั้งค่า > Gmail ของฉัน** (read-only access; the
+   refresh token is stored encrypted with `SECRET_KEY`). User 1 keeps reading `gmail-service/token.json`
+   until connecting there.
+
+   Gmail is a *restricted* scope. While the consent screen is in **Testing**, every person must be
+   listed as a test user and Google expires their access after 7 days (Settings then shows
+   "ต้องเชื่อมใหม่"). Publishing the app ("In production") without verification avoids the 7-day expiry
+   but shows an "unverified app" warning and is limited to 100 users.
 4. For scripts and Bruno: **ตั้งค่า > API token**, then send `Authorization: Bearer fat_...`.
 
 For local development without Google, set `AUTH_MODE=off` in `expense-api/.env`. It acts as user 1 and

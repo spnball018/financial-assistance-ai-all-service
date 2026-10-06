@@ -115,6 +115,26 @@ Errors: `404` · `409` ชื่อซ้ำ · `422`
 ]
 ```
 
+### Gmail ของแต่ละคน (P7.3)
+
+เชื่อม Gmail ของผู้ใช้เอง สิทธิ์ `gmail.readonly` แบบ offline เก็บ refresh token เข้ารหัสด้วย `SECRET_KEY` ใน `ledger.gmail_connections` ไม่มี endpoint ไหนส่ง token กลับออกไป ตอน sync ระบบขอ access token อายุ 1 ชั่วโมง แล้วส่งให้ gmail-service ทาง header `Authorization`
+
+#### ✅ `GET /gmail/status`
+```json
+{"connected": true, "uses_token_json": false, "gmail_address": "kid@gmail.com", "scopes": "...gmail.readonly",
+ "connected_at": "...", "last_used_at": "...", "last_error": null}
+```
+`last_error`: `expired` (Google ยกเลิกสิทธิ์หรือหมดอายุ ต้องเชื่อมใหม่) | `secret_key` (`SECRET_KEY` เปลี่ยน) · ถ้ายังไม่ได้เชื่อม ได้ `{"connected": false, "uses_token_json": <true สำหรับ user 1>}`
+
+#### ✅ `GET /gmail/connect?next=/#settings`
+redirect (303) ไป Google (PKCE, `access_type=offline`, `prompt=consent`) cookie `expense_gmail_flow` ผูกกับผู้ใช้คนนี้
+
+#### ✅ `GET /gmail/callback`
+Google redirect กลับมาที่ `PUBLIC_BASE_URL/api/gmail/callback` ต้องเป็นผู้ใช้คนเดียวกับที่เริ่ม state ต้องตรง ต้องได้ scope Gmail และ refresh token แล้วจึงเก็บ จากนั้น redirect ไป `/?gmail=` `connected` | `denied` | `scope` | `state` | `config` | `failed` `#settings`
+
+#### ✅ `DELETE /gmail/connection` → 204
+ลบสิทธิ์ที่เก็บไว้และแจ้ง Google ให้ revoke (ถ้ายังไม่ได้เชื่อม ได้ 404)
+
 ### แหล่งอีเมล (Gmail label ต่อแหล่ง)
 
 #### ✅ `GET /email-sources`
@@ -148,7 +168,7 @@ Errors: `404` ไม่มี source นี้ · `422` เปิดใช้โ
 ### Sync
 
 #### ✅ `POST /sync`
-ตอนนี้ sync ได้เฉพาะผู้ใช้ id 1 (เจ้าของ `token.json` ของ gmail-service) คนอื่นได้ 409 `Gmail is not connected for this user yet` จนกว่าจะเชื่อม Gmail ต่อคน (P7.3) ใช้กับ `POST /sync/reparse` ด้วย
+อ่าน Gmail ของผู้ใช้ที่ยืนยันตัวตน (ดู "Gmail ของแต่ละคน" ข้างล่าง) ถ้ายังไม่ได้เชื่อม หรือสิทธิ์หมดอายุ ได้ 409 พร้อมข้อความให้ไปเชื่อมที่หน้าตั้งค่า ส่วน user 1 ที่ยังไม่ได้เชื่อมจะใช้ `token.json` ของ gmail-service ใช้กับ `POST /sync/reparse` ด้วย
 
 ดึงอีเมลใหม่ของทุกแหล่งที่ `is_active` บันทึกลง `raw_emails` แล้ว parse เป็นรายการ `pending`
 - ครั้งแรกดึงย้อนหลัง 90 วัน ครั้งต่อไปเริ่มจาก `range_to` ของรอบที่ `success` ล่าสุดลบ 1 วัน
@@ -415,6 +435,8 @@ Response `201`: รายการที่สร้าง · `422` ยอดไ
 ---
 
 ## gmail-service (`localhost:8000`)
+
+ทุก endpoint รับ header `Authorization: Bearer <Google access token>` (ไม่บังคับ) ถ้าส่งมาจะอ่าน mailbox ของเจ้าของ token นั้น ถ้าไม่ส่งจะใช้ `token.json` token ที่ใช้ไม่ได้ได้ 401 expense-api ส่ง header นี้ตอน sync ให้ผู้ใช้ที่เชื่อม Gmail แล้ว
 
 OAuth scope คือ `gmail.modify` อ่านได้และย้ายไปถังขยะได้ แต่ลบถาวรไม่ได้
 

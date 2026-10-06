@@ -1,4 +1,4 @@
-import type { Account, AccountInput, ApiToken, Balance, Category, CreatedApiToken, EmailSource, Me, MerchantRule, User, Receipt, TransferMatch, ConfirmResult, Status, Summary, SyncResult, Txn } from "./types";
+import type { Account, AccountInput, ApiToken, Balance, Category, CreatedApiToken, EmailSource, GmailStatus, Me, MerchantRule, User, Receipt, TransferMatch, ConfirmResult, Status, Summary, SyncResult, Txn } from "./types";
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -46,6 +46,8 @@ export const api = {
   createToken: (name: string, expires_in_days: number | null) =>
     call<CreatedApiToken>("/auth/tokens", { method: "POST", body: JSON.stringify({ name, expires_in_days }) }),
   revokeToken: (id: number) => noContent(`/auth/tokens/${id}`, { method: "DELETE" }),
+  gmailStatus: () => call<GmailStatus>("/gmail/status"),
+  disconnectGmail: () => noContent("/gmail/connection", { method: "DELETE" }),
   users: () => call<User[]>("/users"),
   addUser: (email: string) => call<User>("/users", { method: "POST", body: JSON.stringify({ email }) }),
   updateUser: (id: number, body: Partial<Pick<User, "role" | "is_active">>) =>
