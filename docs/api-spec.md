@@ -246,11 +246,14 @@ Errors: `409` รูปเดิมซ้ำ (เทียบ sha256) · `422` �
 
 ### ตั้งค่า KTC
 
-#### 🚧 `PUT /settings/ktc-password` (K3 ใน [ktc-track.md](ktc-track.md))
-Request `{"password": "..."}` → เก็บแบบเข้ารหัส Fernet ใน `ledger.settings` (key `ktc_pdf_password`) ไม่มี endpoint ไหนคืนรหัสผ่านออกไป
+#### ✅ `PUT /settings/ktc-password` (K3)
+Request `{"password": "..."}` → `204` เก็บแบบเข้ารหัส Fernet (`SECRET_KEY`) ใน `ledger.settings` key `ktc_pdf_password` ไม่มี endpoint ไหนคืนรหัสผ่านออกไป · `500` ถ้าไม่ได้ตั้ง `SECRET_KEY` (ข้อความไม่มีรหัสผ่าน)
 
-#### 🚧 `GET /settings/ktc-password/status`
+#### ✅ `GET /settings/ktc-password/status`
 Response `{"is_set": true, "updated_at": "2026-10-05T07:00:00+00:00"}`
+
+#### ✅ `DELETE /settings/ktc-password`
+`204`
 
 ### รายการและรายงาน (T4.1)
 

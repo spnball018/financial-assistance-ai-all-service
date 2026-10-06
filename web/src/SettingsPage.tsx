@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
-import { EmailSourcesSection, RulesSection } from "./SettingsExtras";
+import { EmailSourcesSection, KtcPasswordSection, RulesSection } from "./SettingsExtras";
 import type { Account, AccountInput, AccountType } from "./types";
 
 const TYPE_LABEL: Record<AccountType, string> = {
@@ -177,6 +177,7 @@ export function SettingsPage() {
         </table>
       </div>
       <EmailSourcesSection accounts={accounts} />
+      <KtcPasswordSection />
       <RulesSection />
     </section>
   );

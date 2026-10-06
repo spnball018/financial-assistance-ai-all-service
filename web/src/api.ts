@@ -40,6 +40,22 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ gmail_label: s.gmail_label, sender_filter: s.sender_filter, account_id: s.account_id, is_active: s.is_active }),
     }),
+  ktcPasswordStatus: () => call<{ is_set: boolean; updated_at: string | null }>("/settings/ktc-password/status"),
+  setKtcPassword: async (password: string) => {
+    const res = await fetch("/api/settings/ktc-password", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new ApiError(res.status, typeof body.detail === "string" ? body.detail : res.statusText);
+    }
+  },
+  deleteKtcPassword: () =>
+    fetch("/api/settings/ktc-password", { method: "DELETE" }).then((r) => {
+      if (!r.ok) throw new ApiError(r.status, r.statusText);
+    }),
   rules: () => call<MerchantRule[]>("/merchant-rules"),
   deleteRule: (key: string) =>
     fetch(`/api/merchant-rules?merchant_key=${encodeURIComponent(key)}`, { method: "DELETE" }).then((r) => {

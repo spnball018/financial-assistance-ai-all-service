@@ -179,3 +179,64 @@ export function RulesSection() {
     </section>
   );
 }
+
+export function KtcPasswordSection() {
+  const [status, setStatus] = useState<{ is_set: boolean; updated_at: string | null } | null>(null);
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const load = () => api.ktcPasswordStatus().then(setStatus, (e: Error) => setError(e.message));
+  useEffect(() => {
+    load();
+  }, []);
+
+  const save = async () => {
+    setError(null);
+    setSaved(false);
+    try {
+      await api.setKtcPassword(password);
+      setPassword("");  // never keep it around in the page
+      setSaved(true);
+      await load();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+  const remove = async () => {
+    if (!window.confirm("ลบรหัส PDF ของ KTC? การ sync จะอ่านบิลบัตร KTC ไม่ได้จนกว่าจะตั้งใหม่")) return;
+    await api.deleteKtcPassword().catch((e: Error) => setError(e.message));
+    await load();
+  };
+
+  return (
+    <section className="settings-section">
+      <h2>รหัส PDF บิลบัตร KTC</h2>
+      <p className="muted small">
+        e-Statement ของ KTC ล็อกรหัสไว้ ระบบใช้รหัสนี้เปิดอ่านตอน sync เก็บแบบเข้ารหัส และไม่มีหน้าไหนแสดงรหัสกลับมา
+      </p>
+      <div className="opening">
+        <span className={status?.is_set ? "badge badge-memory" : "badge badge-none"}>
+          {status === null ? "…" : status.is_set ? `ตั้งแล้ว (${status.updated_at ? fmtWhen(status.updated_at, true) : ""})` : "ยังไม่ได้ตั้ง"}
+        </span>
+        <input
+          type="password"
+          autoComplete="off"
+          placeholder={status?.is_set ? "ใส่รหัสใหม่เพื่อเปลี่ยน" : "รหัส PDF"}
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          aria-label="รหัส PDF ของ KTC"
+        />
+        <button className="primary" disabled={!password} onClick={save}>
+          บันทึก
+        </button>
+        {status?.is_set && (
+          <button className="link" onClick={remove}>
+            ลบ
+          </button>
+        )}
+        {saved && <span className="ok-text small">บันทึกแล้ว</span>}
+        {error && <span className="error-text small">{error}</span>}
+      </div>
+    </section>
+  );
+}
