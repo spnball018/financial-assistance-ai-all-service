@@ -1,4 +1,4 @@
-import type { Account, AccountInput, Balance, Category, EmailSource, MerchantRule, Receipt, TransferMatch, ConfirmResult, Status, Summary, SyncResult, Txn } from "./types";
+import type { Account, AccountInput, ApiToken, Balance, Category, CreatedApiToken, EmailSource, Me, MerchantRule, User, Receipt, TransferMatch, ConfirmResult, Status, Summary, SyncResult, Txn } from "./types";
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -6,11 +6,18 @@ export class ApiError extends Error {
   }
 }
 
-async function call<T>(path: string, init?: RequestInit): Promise<T> {
+/** App listens for this and shows the sign-in page (session expired or signed out elsewhere). */
+export const AUTH_REQUIRED = "auth-required";
+
+/** Every request goes through here: X-Requested-With is the CSRF guard expense-api requires for writes. */
+async function send(path: string, init?: RequestInit): Promise<Response> {
+  const json = typeof init?.body === "string";
   const res = await fetch(`/api${path}`, {
     ...init,
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+    credentials: "same-origin",
+    headers: { "X-Requested-With": "fetch", ...(json ? { "Content-Type": "application/json" } : {}), ...(init?.headers ?? {}) },
   });
+  if (res.status === 401 && path !== "/auth/me") window.dispatchEvent(new Event(AUTH_REQUIRED));
   if (!res.ok) {
     let detail = res.statusText;
     try {
@@ -21,19 +28,34 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
     }
     throw new ApiError(res.status, detail);
   }
-  return res.json() as Promise<T>;
+  return res;
+}
+
+async function call<T>(path: string, init?: RequestInit): Promise<T> {
+  return (await send(path, init)).json() as Promise<T>;
+}
+
+async function noContent(path: string, init?: RequestInit): Promise<void> {
+  await send(path, init);
 }
 
 export const api = {
+  me: () => call<Me>("/auth/me"),
+  logout: () => noContent("/auth/logout", { method: "POST" }),
+  tokens: () => call<ApiToken[]>("/auth/tokens"),
+  createToken: (name: string, expires_in_days: number | null) =>
+    call<CreatedApiToken>("/auth/tokens", { method: "POST", body: JSON.stringify({ name, expires_in_days }) }),
+  revokeToken: (id: number) => noContent(`/auth/tokens/${id}`, { method: "DELETE" }),
+  users: () => call<User[]>("/users"),
+  addUser: (email: string) => call<User>("/users", { method: "POST", body: JSON.stringify({ email }) }),
+  updateUser: (id: number, body: Partial<Pick<User, "role" | "is_active">>) =>
+    call<User>(`/users/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   categories: () => call<Category[]>("/categories"),
   accounts: () => call<Account[]>("/accounts"),
   balances: () => call<Balance[]>("/accounts/balances"),
   setOpening: (id: number, body: { amount: string; as_of: string }) =>
     call<{ amount: number; as_of: string }>(`/accounts/${id}/opening-balance`, { method: "PUT", body: JSON.stringify(body) }),
-  deleteOpening: (id: number) =>
-    fetch(`/api/accounts/${id}/opening-balance`, { method: "DELETE" }).then((r) => {
-      if (!r.ok) throw new ApiError(r.status, r.statusText);
-    }),
+  deleteOpening: (id: number) => noContent(`/accounts/${id}/opening-balance`, { method: "DELETE" }),
   emailSources: () => call<EmailSource[]>("/email-sources"),
   updateEmailSource: (s: EmailSource) =>
     call<EmailSource>(`/email-sources/${s.source}`, {
@@ -41,29 +63,14 @@ export const api = {
       body: JSON.stringify({ gmail_label: s.gmail_label, sender_filter: s.sender_filter, account_id: s.account_id, is_active: s.is_active }),
     }),
   ktcPasswordStatus: () => call<{ is_set: boolean; updated_at: string | null }>("/settings/ktc-password/status"),
-  setKtcPassword: async (password: string) => {
-    const res = await fetch("/api/settings/ktc-password", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password }),
-    });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      throw new ApiError(res.status, typeof body.detail === "string" ? body.detail : res.statusText);
-    }
-  },
-  deleteKtcPassword: () =>
-    fetch("/api/settings/ktc-password", { method: "DELETE" }).then((r) => {
-      if (!r.ok) throw new ApiError(r.status, r.statusText);
-    }),
+  setKtcPassword: (password: string) =>
+    noContent("/settings/ktc-password", { method: "PUT", body: JSON.stringify({ password }) }),
+  deleteKtcPassword: () => noContent("/settings/ktc-password", { method: "DELETE" }),
   transferMatches: () => call<TransferMatch[]>("/reconcile/transfer-matches"),
   linkTransfer: (income_id: number, transfer_id: number) =>
     call<TransferMatch>("/reconcile/transfer-matches", { method: "POST", body: JSON.stringify({ income_id, transfer_id }) }),
   rules: () => call<MerchantRule[]>("/merchant-rules"),
-  deleteRule: (key: string) =>
-    fetch(`/api/merchant-rules?merchant_key=${encodeURIComponent(key)}`, { method: "DELETE" }).then((r) => {
-      if (!r.ok) throw new ApiError(r.status, r.statusText);
-    }),
+  deleteRule: (key: string) => noContent(`/merchant-rules?merchant_key=${encodeURIComponent(key)}`, { method: "DELETE" }),
   createAccount: (body: AccountInput) => call<Account>("/accounts", { method: "POST", body: JSON.stringify(body) }),
   updateAccount: (id: number, body: Partial<Account>) =>
     call<Account>(`/accounts/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
@@ -81,13 +88,10 @@ export const api = {
     },
   ) =>
     call<Txn>(`/transactions/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
-  uploadReceipt: async (txnId: number, file: File): Promise<Receipt> => {
+  uploadReceipt: (txnId: number, file: File) => {
     const form = new FormData();
     form.append("file", file);
-    const res = await fetch(`/api/transactions/${txnId}/receipts`, { method: "POST", body: form });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) throw new ApiError(res.status, typeof body.detail === "string" ? body.detail : res.statusText);
-    return body as Receipt;
+    return call<Receipt>(`/transactions/${txnId}/receipts`, { method: "POST", body: form });
   },
   receipts: (txnId: number) => call<Receipt[]>(`/transactions/${txnId}/receipts`),
   rereadReceipt: (id: number) => call<Receipt>(`/receipts/${id}/read`, { method: "POST" }),

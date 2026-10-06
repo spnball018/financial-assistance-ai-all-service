@@ -15,9 +15,11 @@ This repository wires the services together with Docker Compose on a shared `fin
 | `gmail-service` | `gmail-service/` (git submodule, FastAPI) | 8000 | Generic Gmail reader: list by label, message bodies, attachments, move to Trash |
 | `credit-card-statement-service` | `credit-card-statement-service/` (FastAPI) | 8003 | Parses statement files (CSV, KTC e-Statement PDF) |
 | `postgres` | postgres:16-alpine | 5432 | Database `financial`, schema `ledger` |
+| `caddy` | caddy:2-alpine (profile `public`) | 80, 443 | HTTPS for a public server; proxies to `web` |
 | `langgraph` / `chatbot` | `langgraph/` (git submodule) | — | Older LangGraph assistant (profile-gated, not part of the tracker yet) |
 
-All ports are bound to `127.0.0.1`. There is no login yet, so do not expose them on a network.
+All ports are bound to `127.0.0.1` except Caddy's. The web UI and expense-api require Google sign-in
+(or an API token). gmail-service and credit-card-statement-service have no auth, so never publish their ports.
 
 ## Setup
 
@@ -47,6 +49,36 @@ All ports are bound to `127.0.0.1`. There is no login yet, so do not expose them
    ```
    `expense-api` runs the database migrations on start. Press **Refresh** in the web UI to pull the
    last three months of email.
+
+## Sign-in and users
+
+1. Google Cloud > APIs & Services > Credentials > **Create OAuth client ID** > *Web application*
+   (a different client from gmail-service's `credentials.json`). Authorized redirect URI:
+   `<PUBLIC_BASE_URL>/api/auth/callback`, e.g. `http://localhost:3000/api/auth/callback` or
+   `https://money.example.com/api/auth/callback`.
+2. In `expense-api/.env`: `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `PUBLIC_BASE_URL`,
+   and `ADMIN_EMAILS` (your Google address; always an admin). `SECRET_KEY` must be set too.
+3. Sign in. Add family members in **ตั้งค่า > ผู้ใช้** by their Google address. Each person will see
+   only their own data. (Per-user data separation and Gmail per person are being built: Phase 7 in the plan.)
+4. For scripts and Bruno: **ตั้งค่า > API token**, then send `Authorization: Bearer fat_...`.
+
+For local development without Google, set `AUTH_MODE=off` in `expense-api/.env`. It acts as user 1 and
+only answers requests for `localhost`/`127.0.0.1`.
+
+## Public server
+
+Google sign-in does not accept a bare IP address, so point a domain name at the server (a free
+DuckDNS name works). Then:
+
+```bash
+echo "DOMAIN=money.example.com" >> .env
+# expense-api/.env: PUBLIC_BASE_URL=https://money.example.com
+#                   ALLOWED_HOSTS=localhost,127.0.0.1,expense-api,money.example.com
+docker compose --profile public up -d --build
+```
+
+Caddy gets a Let's Encrypt certificate automatically (ports 80 and 443 must be open in the firewall).
+Everything else stays on `127.0.0.1`. Change `POSTGRES_PASSWORD` before the first start.
 
 ## Local development
 

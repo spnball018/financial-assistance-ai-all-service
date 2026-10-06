@@ -9,3 +9,5 @@ google-genai>=1.0
 pydantic>=2.0
 pytest>=8.0
 python-multipart>=0.0.9
+google-auth>=2.30
+requests>=2.32

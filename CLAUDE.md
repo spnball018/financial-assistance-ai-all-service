@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repo is
 
-The Financial Assistance AI project: a personal expense tracker plus the services it needs, wired together in `docker-compose.yml` on a shared `financial-ai` bridge network. All host ports are bound to `127.0.0.1` (there is no auth yet).
+The Financial Assistance AI project: a personal expense tracker plus the services it needs, wired together in `docker-compose.yml` on a shared `financial-ai` bridge network. All host ports are bound to `127.0.0.1`; the only public entry is `caddy` (profile `public`, HTTPS). expense-api requires Google sign-in (session cookie) or an API token on every route except `/health` and `/auth/*` sign-in routes (`app/auth.py`); `AUTH_MODE=off` is for localhost development only.
 
 - **`expense-api/`** (in this repo; FastAPI + Alembic, host port 8002): owns the Postgres schema `ledger` and all money logic: sync from Gmail, per-source parsers (`sources/`, `parsers/`), categorization (`categorize/`), review/confirm, balances, receipts. Layering: `app/routers` → `sync` → `sources` → `parsers`; `sync/repo.py` is the only writer during sync. Secrets in `expense-api/.env`.
 - **`web/`** (in this repo; React + Vite, host port 3000; nginx in Docker): the UI. Calls `/api/*`, which the Vite dev server or nginx proxies to expense-api.
@@ -23,6 +23,8 @@ docker compose --profile manual up --build gmail-auth
 
 # Start the always-on services (postgres, gmail-service, credit-card-statement-service, expense-api, web)
 docker compose up -d
+# Public server: also Caddy on :80/:443 with Let's Encrypt for DOMAIN (./.env)
+docker compose --profile public up -d
 
 # Run the LangGraph assistant (profile-gated; waits for the services above to be healthy)
 docker compose --profile chatbot run --rm chatbot    # interactive (stdin/tty)
@@ -40,6 +42,7 @@ docker compose up -d postgres
 (cd gmail-service && .venv/bin/uvicorn main:app --port 8000)
 (cd expense-api && DATABASE_URL=postgresql://postgres:postgres@localhost:5432/financial \
    GMAIL_SERVICE_URL=http://localhost:8000 .venv/bin/uvicorn app.main:app --port 8002 --env-file .env)
+# (AUTH_MODE=off in expense-api/.env skips Google sign-in on localhost)
 (cd web && npm install && npm run dev)          # http://localhost:3000, proxies /api -> :8002
 # expense-api tests (DB tests need a database whose name contains "test")
 (cd expense-api && TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/financial_test .venv/bin/python -m pytest)
@@ -50,6 +53,8 @@ Design docs live in `docs/`: start with `handoff.md` (current state, files not i
 `credentials.json` must be in the repo root, next to `docker-compose.yml`. It and `token.json` are gitignored. Each FastAPI service serves Swagger at `/docs`, and the healthchecks call that same URL.
 
 `expense-api` has a pytest suite; `web` type-checks and builds with `npm run build`. The other services are verified by running them.
+
+New routers: mount them on `protected` in `app/main.py` (never on `app` directly); `tests/test_auth.py` calls every OpenAPI path signed out and fails on any that is not 401. The tests' autouse fixture `signed_in` (conftest) signs every other test in as user 1.
 
 Migrations: add `expense-api/alembic/versions/NNNN_*.py` with a linear `down_revision`, then update `docs/er-diagram.md` (and re-render the PNG) and `docs/api-spec.md` for any API change.
 

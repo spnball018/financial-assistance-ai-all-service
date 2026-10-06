@@ -23,9 +23,10 @@ def encrypt(value: str) -> str:
     return _fernet().encrypt(value.encode()).decode()
 
 
-def decrypt(token: str) -> str:
+def decrypt(token: str, ttl: Optional[int] = None) -> str:
+    """ttl (seconds): also reject tokens older than this, e.g. the short-lived sign-in cookie."""
     try:
-        return _fernet().decrypt(token.encode()).decode()
+        return _fernet().decrypt(token.encode(), ttl=ttl).decode()
     except InvalidToken:
         # Wrong SECRET_KEY or tampered value; do not include the token in the message.
         raise RuntimeError("stored setting cannot be decrypted with the current SECRET_KEY") from None

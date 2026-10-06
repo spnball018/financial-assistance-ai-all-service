@@ -4,11 +4,14 @@ networks:
 
 volumes:
   postgres_data:
+  caddy_data:
+  caddy_config:
 
 services:
 
-  # Every port is bound to 127.0.0.1: nothing here has authentication yet, so keep it off the LAN.
-# Secrets come from ./.env (see .env.example) and ./expense-api/.env.
+  # Every port is bound to 127.0.0.1. Only `caddy` (profile public) listens on the network: it serves
+  # the web UI over HTTPS, and the UI and API require Google sign-in or an API token.
+  # Secrets come from ./.env (see .env.example) and ./expense-api/.env.
 
   # ── PostgreSQL ────────────────────────────────────────────────────────────
   postgres:
@@ -100,7 +103,7 @@ services:
         condition: service_healthy
     healthcheck:
       # python:slim has no curl, so probe with the stdlib
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/docs')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -119,6 +122,28 @@ services:
     depends_on:
       expense-api:
         condition: service_healthy
+
+  # ── Public HTTPS entry (docker compose --profile public up -d) ─────────────
+  caddy:
+    image: caddy:2-alpine
+    container_name: financial-ai-caddy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      - DOMAIN=${DOMAIN:?set DOMAIN in ./.env}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - financial-ai
+    restart: unless-stopped
+    depends_on:
+      - web
+    profiles:
+      - public
 
   # ── One-shot OAuth helper (run manually when token.json is missing/expired) ─
   gmail-auth:

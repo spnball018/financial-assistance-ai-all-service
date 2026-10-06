@@ -9,7 +9,8 @@ export default defineConfig({
   server: {
     port: 3000,
     proxy: {
-      "/api": { target, changeOrigin: true, rewrite: (p) => p.replace(/^\/api/, "") },
+      // X-Forwarded-Prefix lets expense-api's Swagger (/api/docs) find its spec behind the proxy
+      "/api": { target, changeOrigin: true, rewrite: (p) => p.replace(/^\/api/, ""), headers: { "X-Forwarded-Prefix": "/api" } },
     },
   },
 });

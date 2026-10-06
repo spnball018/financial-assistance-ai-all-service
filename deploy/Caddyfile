@@ -1,0 +1,15 @@
+# Public HTTPS entry point (docker compose --profile public). Caddy gets a Let's Encrypt
+# certificate for DOMAIN automatically; DOMAIN must resolve to this server and ports 80/443 must be open.
+{$DOMAIN} {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy same-origin
+		-Server
+	}
+	reverse_proxy web:80 {
+		header_up X-Forwarded-Proto https
+	}
+}

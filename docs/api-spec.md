@@ -12,7 +12,12 @@
 | `gmail-service` | 8000 | `http://gmail-service:8000` | ตัวกลางอ่าน Gmail ทั่วไป ไม่มี logic การเงิน |
 | `credit-card-statement-service` | 8003 | `http://credit-card-statement-service:8000` | แกะไฟล์ statement (CSV, PDF ของ KTC) |
 
-ยังไม่มีระบบ auth ทุก endpoint เปิดให้ใครก็ได้ที่เข้าถึงพอร์ตได้ (Google Auth อยู่ใน backlog)
+**การยืนยันตัวตน (expense-api)**: ทุก endpoint ต้องยืนยันตัวตน ยกเว้น `GET /health`, `/auth/login`, `/auth/callback`, `/auth/logout` ทำได้ 2 แบบ
+- **cookie** `expense_session` จากการเข้าสู่ระบบด้วย Google ผ่านหน้าเว็บ ถ้าเป็น POST/PUT/PATCH/DELETE ต้องส่ง header `X-Requested-With` (ค่าอะไรก็ได้) เพื่อกัน CSRF ไม่งั้นได้ 403
+- **API token**: `Authorization: Bearer fat_...` สร้างในหน้าตั้งค่า token ทำงานในนามของผู้ใช้ที่สร้าง แต่สร้าง token และจัดการผู้ใช้ไม่ได้ (403)
+
+ไม่ได้ยืนยันตัวตนได้ 401 ถ้าตั้ง `AUTH_MODE=off` (สำหรับพัฒนาในเครื่อง) จะข้ามการเข้าสู่ระบบโดยทำงานเป็นผู้ใช้ id 1 และรับเฉพาะ Host `localhost`/`127.0.0.1`
+`/docs` และ `/openapi.json` ต้องยืนยันตัวตนเหมือนกัน (ผ่านหน้าเว็บเปิด `/api/docs`) ส่วน gmail-service และ credit-card-statement-service ไม่มี auth จึงต้องเปิดแค่ใน docker network / 127.0.0.1
 
 ข้อตกลงร่วม
 - เงินเป็น decimal: ใน request ส่งเป็น string (แนะนำ เช่น `"45.50"`) หรือ number ก็ได้ ใน response เป็น number สกุลเงินเริ่มต้นคือ `THB`
@@ -22,6 +27,34 @@
 ---
 
 ## expense-api (`localhost:8002`)
+
+### การเข้าสู่ระบบและผู้ใช้
+
+#### ✅ `GET /health`
+ไม่ต้องยืนยันตัวตน ใช้กับ healthcheck ของ docker → `{"ok": true}`
+
+#### ✅ `GET /auth/login?next=/#settings`
+redirect (303) ไป Google (authorization code + PKCE, scope `openid email profile`) เก็บ state/nonce/verifier ใน cookie `expense_oauth_flow` ที่เข้ารหัสด้วย `SECRET_KEY` อายุ 10 นาที `next` รับเฉพาะ path ในเว็บเดียวกัน
+
+#### ✅ `GET /auth/callback`
+Google redirect กลับมาที่ `PUBLIC_BASE_URL/api/auth/callback` ตรวจ state, nonce, ลายเซ็น ID token และ `email_verified` แล้วต้องเป็นผู้ใช้ที่เปิดใช้งานอยู่ใน `ledger.users` (หรืออยู่ใน `ADMIN_EMAILS`) สำเร็จ: ตั้ง cookie `expense_session` (HttpOnly, SameSite=Lax, Secure เมื่อ `PUBLIC_BASE_URL` เป็น https) แล้ว redirect ไป `next` ไม่สำเร็จ: redirect ไป `/?login_error=` `not_allowed` | `denied` | `state` | `config` | `failed`
+
+#### ✅ `POST /auth/logout` → 204
+ลบ session และ cookie
+
+#### ✅ `GET /auth/me`
+```json
+{"id": 1, "email": "me@example.com", "name": "Me", "role": "admin", "via": "session", "auth_mode": "google"}
+```
+`via`: `session` | `token` | `off`
+
+#### ✅ `GET /auth/tokens` · `POST /auth/tokens` · `DELETE /auth/tokens/{id}` (ต้องเข้าสู่ระบบผ่านหน้าเว็บ)
+token ของตัวเองเท่านั้น `POST` body `{"name": "bruno", "expires_in_days": 90}` (`null` = ไม่หมดอายุ, 1–3650) → 201 พร้อม `token` ที่แสดงครั้งเดียว (DB เก็บแค่ sha256) รายการแสดง `token_prefix` (8 ตัวแรก), `created_at`, `last_used_at`, `expires_at`, `revoked_at` · `DELETE` = ยกเลิก (204, 404 ถ้าไม่ใช่ของตัวเอง)
+
+#### ✅ `GET /users` · `POST /users` · `PATCH /users/{id}` (เฉพาะ admin)
+- `POST` body `{"email": "kid@example.com", "role": "member"}` → 201 (409 ถ้ามีแล้ว) อีเมลเก็บเป็นตัวเล็ก
+- `PATCH` body `{"role": "admin"}` หรือ `{"is_active": false}` ปิดการใช้งานแล้ว session ถูกลบทันที และ token ใช้ไม่ได้ (ข้อมูลยังอยู่) ปิดหรือลดสิทธิ์ตัวเองไม่ได้ (422)
+- อีเมลใน env `ADMIN_EMAILS` เป็น admin เสมอ และถูกสร้างเมื่อเข้าสู่ระบบครั้งแรก
 
 ### ข้อมูลอ้างอิง
 

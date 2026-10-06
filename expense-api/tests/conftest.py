@@ -9,6 +9,17 @@ from sqlalchemy import create_engine, text
 ROOT = Path(__file__).resolve().parent.parent
 
 
+@pytest.fixture(autouse=True)
+def signed_in():
+    """API tests act as a signed-in user; tests/test_auth.py removes this to test sign-in itself."""
+    from app.auth import Principal, require_user
+    from app.main import app
+
+    app.dependency_overrides[require_user] = lambda: Principal(user_id=1, email="test@example.com", role="admin", via="session")
+    yield
+    app.dependency_overrides.pop(require_user, None)
+
+
 @pytest.fixture(scope="session")
 def db_engine():
     """Engine on a throwaway database. Set TEST_DATABASE_URL (database name must contain 'test'):

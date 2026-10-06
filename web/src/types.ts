@@ -158,3 +158,37 @@ export interface TransferMatch {
   transfer_at: string;
   transfer_status: string;
 }
+
+export interface Me {
+  id: number;
+  email: string;
+  name: string | null;
+  role: "admin" | "member";
+  via: "session" | "token" | "off";
+  auth_mode: "google" | "off";
+}
+
+export interface User {
+  id: number;
+  email: string;
+  name: string | null;
+  role: "admin" | "member";
+  is_active: boolean;
+  created_at: string;
+  last_login_at: string | null;
+}
+
+export interface ApiToken {
+  id: number;
+  name: string;
+  token_prefix: string;
+  created_at: string;
+  expires_at: string | null;
+  last_used_at: string | null;
+  revoked_at: string | null;
+}
+
+/** Only the create response carries the token itself. */
+export interface CreatedApiToken extends ApiToken {
+  token: string;
+}

@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
+import { ApiTokensSection, UsersSection } from "./AccessSettings";
 import { EmailSourcesSection, KtcPasswordSection, RulesSection } from "./SettingsExtras";
+import type { Me } from "./types";
 import type { Account, AccountInput, AccountType } from "./types";
 
 const TYPE_LABEL: Record<AccountType, string> = {
@@ -79,7 +81,7 @@ function AccountRow({ account, onSaved }: { account: Account; onSaved: (a: Accou
   );
 }
 
-export function SettingsPage() {
+export function SettingsPage({ me }: { me: Me }) {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [draft, setDraft] = useState<AccountInput>(EMPTY);
   const [error, setError] = useState<string | null>(null);
@@ -179,6 +181,8 @@ export function SettingsPage() {
       <EmailSourcesSection accounts={accounts} />
       <KtcPasswordSection />
       <RulesSection />
+      {me.via === "session" && <ApiTokensSection />}
+      {me.via === "session" && me.role === "admin" && <UsersSection meId={me.id} />}
     </section>
   );
 }

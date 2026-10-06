@@ -13,7 +13,8 @@
   - สรุปรายเดือน: รายจ่าย, รายรับ, สุทธิ, ยอดโอน
   - ยอดคงเหลือ: ยอดยกมา และเทียบยอดกับอีเมล KBank
   - ตั้งค่า: บัญชี, แหล่งอีเมล, รหัส PDF KTC, กฎที่จำไว้
-- **เทสต์**: expense-api 122 ข้อ (+2 ข้อที่ต้องมี PDF จริง) และ credit-card-statement-service 8 ข้อ
+- **เข้าสู่ระบบ (P7.1)**: Google sign-in ทุกหน้า, API token (Bearer) สำหรับสคริปต์/Bruno, หลายผู้ใช้ (admin เพิ่มสมาชิกในหน้าตั้งค่า), Caddy ทำ HTTPS สำหรับ public IP (`--profile public`) · **ข้อมูลยังไม่แยกต่อผู้ใช้** (P7.2) อย่าเพิ่มสมาชิกจนกว่า P7.2 จะเสร็จ ไม่งั้นเขาจะเห็นข้อมูลของคุณ
+- **เทสต์**: expense-api 145 ข้อ (+2 ข้อที่ต้องมี PDF จริง) และ credit-card-statement-service 8 ข้อ
 
 ## สิ่งที่ไม่อยู่ใน git (ต้องย้ายเอง)
 
@@ -21,8 +22,8 @@
 |---|---|---|
 | `credentials.json` (root) | OAuth client ของ Gmail | สร้างใหม่ใน Google Cloud แล้วรัน `gmail-auth` |
 | `gmail-service/token.json` | token ที่ consent แล้ว (scope `gmail.modify`) | รัน `docker compose --profile manual up --build gmail-auth` ใหม่ |
-| `expense-api/.env` | `SECRET_KEY`, `GEMINI_API_KEY`, `KTC_PDF_PASSWORD` | ต้องตั้งใหม่ **และ `SECRET_KEY` ต้องเป็นค่าเดิมถ้าย้าย DB ไปด้วย** ไม่งั้นถอดรหัส PDF ของ KTC ที่เก็บไว้ไม่ได้ (ตั้งรหัสใหม่ในหน้าตั้งค่าแทนได้) |
-| `.env` (root) | `POSTGRES_PASSWORD` (ตอนนี้ยังไม่มี ใช้ค่าเริ่มต้น `postgres`) | ไม่ต้องทำอะไร |
+| `expense-api/.env` | `SECRET_KEY`, `GEMINI_API_KEY`, `KTC_PDF_PASSWORD`, sign-in (`AUTH_MODE`, `ADMIN_EMAILS`, `PUBLIC_BASE_URL`, `GOOGLE_OAUTH_CLIENT_ID/SECRET`) | ต้องตั้งใหม่ **และ `SECRET_KEY` ต้องเป็นค่าเดิมถ้าย้าย DB ไปด้วย** ไม่งั้นถอดรหัส PDF ของ KTC ที่เก็บไว้ไม่ได้ (ตั้งรหัสใหม่ในหน้าตั้งค่าแทนได้) |
+| `.env` (root) | `POSTGRES_PASSWORD` (ตอนนี้ยังไม่มี ใช้ค่าเริ่มต้น `postgres`), `DOMAIN` (เครื่อง public) | ไม่ต้องทำอะไร (เครื่อง public ต้องตั้งทั้งสองค่า) |
 | `expense-api/tests/fixtures/` | อีเมล KBank 7 ฉบับ + PDF KTC 1 ฉบับ (ข้อมูลจริง) | เทสต์ที่ใช้ fixture จะ skip เอง |
 | `data/receipts/` | รูปใบเสร็จ (ตอนนี้ยังว่าง) | — |
 | **ข้อมูลใน Postgres** (docker volume) | รายการที่ยืนยันแล้ว, กฎที่จำไว้, ยอดยกมา, รายการบันทึกเอง | **หายถ้าไม่ dump** ส่วนที่มาจากอีเมล sync ใหม่ได้ แต่การยืนยัน/กฎ/ยอดยกมา/รายการบันทึกเองจะหายหมด |
@@ -74,28 +75,30 @@ cd ../web && npm run build
 ## เรื่องที่ควรรู้
 
 - **docker ใน compose ยังไม่เคยรันครบชุด**: `web` (Node build + nginx) และ credit-card-statement-service (Python 3.10) ยังไม่เคย build ใน docker เพราะเครื่องเดิมต้องใช้ sudo ตอนพัฒนาใช้ Postgres ใน docker และที่เหลือรันจาก venv
-- **ทุกพอร์ตผูกกับ `127.0.0.1`** เพราะยังไม่มี login ส่วน expense-api รับเฉพาะ Host `localhost`/`127.0.0.1`/`expense-api` (`ALLOWED_HOSTS`)
+- **ทุกพอร์ตผูกกับ `127.0.0.1`** ยกเว้น Caddy (80/443) ส่วน expense-api รับเฉพาะ Host ใน `ALLOWED_HOSTS` (เครื่อง public ต้องเพิ่มโดเมน)
+- **sign-in**: ถ้ายังไม่ได้สร้าง OAuth client แบบ Web application ให้ใส่ `AUTH_MODE=off` ใน `expense-api/.env` เพื่อใช้ในเครื่อง (รับเฉพาะ localhost) ขั้นตอนตั้งค่า Google อยู่ใน README หัวข้อ Sign-in · user 1 คือเจ้าของข้อมูลเดิม ถ้าตอน migrate ยังไม่ตั้ง `ADMIN_EMAILS` จะเป็น `owner@localhost` แล้วอีเมลแรกใน `ADMIN_EMAILS` ที่เข้าสู่ระบบจะรับข้อมูลนั้นไป
 - **`token.json` เป็นของ root** หลังรัน `gmail-auth` ใน docker แก้ด้วย `sudo chown $USER gmail-service/token.json`
 - **Gemini**: `gemini-2.5-flash` ตอบ 404 สำหรับผู้ใช้ใหม่ และรุ่น Flash ตัวเต็มตอบ 503 บน free tier บ่อย adapter retry ให้แล้ว เปลี่ยนรุ่นได้ด้วย `GEMINI_MODEL`
 - **sync**: แหล่งที่เพิ่งเปิดดึงย้อน 90 วัน รอบแรกของ KBank ใช้ราว 2 นาที
 - **branch `ktc-track`**: merge เข้า `main` หมดแล้ว ลบได้
-- **migration ล่าสุดคือ 0010**: ถ้าเพิ่ม migration ต้องอัปเดต [er-diagram.md](er-diagram.md) (render PNG ใหม่) และ [api-spec.md](api-spec.md)
+- **migration ล่าสุดคือ 0011** (auth): ถ้าเพิ่ม migration ต้องอัปเดต [er-diagram.md](er-diagram.md) (render PNG ใหม่) และ [api-spec.md](api-spec.md)
 
 ## งานถัดไป
 
-1. **T1.3 marketplace**: label `marketplace-shopee`, `marketplace-lazada`, `marketplace-aliexpress`, `marketplace-temu`
-   - เพิ่มค่า `aliexpress_email`, `temu_email` ใน CHECK ของ `email_sources.source`, `transactions.source` และ `ecommerce_orders.platform` (migration 0011)
+1. **P7.2 แยกข้อมูลต่อผู้ใช้** (ผู้ใช้สั่ง 2026-10-06: แยกกันหมด ไม่แชร์) `user_id` ในทุกตารางข้อมูล, ทุก query กรองด้วย `Principal.user_id`, เทสต์ว่าผู้ใช้ A มองไม่เห็นข้อมูล B
+2. **P7.3 Gmail ต่อผู้ใช้** เชื่อม Gmail ของแต่ละคนจากหน้าเว็บ (ดูข้อจำกัด test user / 7 วันในแผน)
+3. **T1.3 marketplace**: label `marketplace-shopee`, `marketplace-lazada`, `marketplace-aliexpress`, `marketplace-temu`
+   - เพิ่มค่า `aliexpress_email`, `temu_email` ใน CHECK ของ `email_sources.source`, `transactions.source` และ `ecommerce_orders.platform` (migration ถัดไป)
    - ดึงอีเมลตัวอย่างมาเก็บใน `expense-api/tests/fixtures/` (ผู้ใช้อนุญาตให้ดึงอีเมลจริงมาเก็บใน fixtures ที่ gitignore แล้ว)
    - เขียน `parsers/<shop>.py` + `sources/<shop>.py` ตาม `sources/base.py` แล้วลงทะเบียนใน `sources/__init__.py`
-2. **T2.1**: จับคู่ order ของ marketplace กับรายการจ่าย (KBank / บรรทัดในบิล KTC) แล้วแตกเป็น order → รายการสินค้า
-3. **T6.7 ส่วนที่เหลือ**: จับคู่กับข้อมูลฝั่ง wallet ของ marketplace หลัง T1.3
-4. **Backlog**
+4. **T2.1**: จับคู่ order ของ marketplace กับรายการจ่าย (KBank / บรรทัดในบิล KTC) แล้วแตกเป็น order → รายการสินค้า
+5. **T6.7 ส่วนที่เหลือ**: จับคู่กับข้อมูลฝั่ง wallet ของ marketplace หลัง T1.3
+6. **Backlog**
    - ถ่ายใบเสร็จก่อนรายการเข้าแล้วจับคู่อัตโนมัติ
    - ย่อรูปใบเสร็จก่อนเก็บ
    - บัญชีกองทุน (กำไร/ขาดทุน)
    - refund
    - Top-up ของ KBank (ตอนนี้ข้าม)
-   - Google Auth
    - chatbot ใน langgraph อ่านจาก ledger
    - `user:` ใน compose ของ gmail-service
 

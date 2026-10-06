@@ -194,3 +194,13 @@ table.balances .b-open { min-width: 380px; }
   .b-name { grid-area: name; } .b-bal { grid-area: bal; font-weight: 600; }
   .b-pend { grid-area: pend; text-align: left; } .b-open { grid-area: open; }
 }
+
+/* sign-in and access settings */
+.login { max-width: 420px; margin: 15vh auto 0; padding: 0 16px; display: grid; gap: 16px; text-align: center; }
+a.button { display: inline-block; padding: 10px 16px; border-radius: 6px; border: 1px solid var(--border); text-decoration: none; color: inherit; background: var(--surface); font-weight: 600; }
+a.button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+.who { display: flex; gap: 8px; align-items: center; min-width: 0; }
+.who > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
+.token-once { align-items: flex-start; }
+.token-value { display: block; margin-top: 6px; word-break: break-all; user-select: all; }
+.token-actions { display: flex; gap: 8px; align-items: center; }

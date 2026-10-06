@@ -336,8 +336,8 @@ export function ReviewPage({ categories, accounts }: { categories: Category[]; a
           />
         </label>
         <div className="spacer" />
-        <button onClick={refresh} disabled={syncing}>
-          {syncing ? "กำลังดึงอีเมล…" : "Refresh"}
+        <button onClick={refresh} disabled={syncing} title="ดึงอีเมลธนาคาร/บัตรใหม่จาก Gmail แล้วจัดหมวด">
+          {syncing ? "กำลังดึงอีเมล…" : "⟳ ดึงอีเมลใหม่"}
         </button>
         {status === "pending" && (
           <>
@@ -393,7 +393,7 @@ export function ReviewPage({ categories, accounts }: { categories: Category[]; a
             {!loading && items.length === 0 && (
               <tr>
                 <td colSpan={7} className="empty">
-                  {status === "pending" ? "ไม่มีรายการรอตรวจ กด Refresh เพื่อดึงอีเมลใหม่" : "ไม่มีรายการ"}
+                  {status === "pending" ? "ไม่มีรายการรอตรวจ กดปุ่ม ดึงอีเมลใหม่ เพื่อดึงรายการจาก Gmail" : "ไม่มีรายการ"}
                 </td>
               </tr>
             )}

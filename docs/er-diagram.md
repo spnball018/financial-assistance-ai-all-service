@@ -1,6 +1,6 @@
 # ER diagram: schema `ledger`
 
-สร้างจาก DB จริง (migration 0010, 2026-10-06) ถ้าเพิ่ม migration ให้อัปเดตไฟล์นี้ด้วย ส่วนตาราง `alembic_version` ไม่ได้แสดง
+สร้างจาก DB จริง (migration 0011, 2026-10-06) ถ้าเพิ่ม migration ให้อัปเดตไฟล์นี้ด้วย ส่วนตาราง `alembic_version` ไม่ได้แสดง
 
 ภาพ PNG: [er-diagram.png](er-diagram.png) (render จาก Mermaid ข้างล่าง ใช้ดูใน editor ที่ไม่รองรับ Mermaid ถ้าแก้ diagram ให้ render ใหม่ด้วย `npx @mermaid-js/mermaid-cli -i <ไฟล์ .mmd> -o docs/er-diagram.png -w 2400 -b white`)
 
@@ -162,6 +162,38 @@ erDiagram
         timestamptz updated_at
     }
 
+    users {
+        int id PK "1 = เจ้าของข้อมูลเดิม"
+        text email UK "ตัวเล็กเสมอ"
+        text name "จาก Google"
+        text role "admin | member"
+        bool is_active
+        timestamptz created_at
+        timestamptz last_login_at
+    }
+
+    auth_sessions {
+        bigint id PK
+        int user_id FK
+        text token_hash UK "sha256 ของ cookie"
+        text user_agent
+        timestamptz created_at
+        timestamptz last_seen_at
+        timestamptz expires_at
+    }
+
+    api_tokens {
+        int id PK
+        int user_id FK
+        text name
+        text token_prefix "8 ตัวแรก ไว้แสดง"
+        text token_hash UK "sha256 ของ token"
+        timestamptz created_at
+        timestamptz expires_at "NULL = ไม่หมดอายุ"
+        timestamptz last_used_at
+        timestamptz revoked_at
+    }
+
     accounts ||--o{ transactions : "account_id"
     accounts |o--o{ transactions : "counter_account_id"
     accounts |o--o{ email_sources : "account_id"
@@ -179,6 +211,8 @@ erDiagram
     transactions |o--o{ receipts : "transaction_id"
     receipts |o--o{ transactions : "receipt_id"
     email_sources ||..o{ raw_emails : "source (ตรรกะ ไม่มี FK)"
+    users ||--o{ auth_sessions : "user_id"
+    users ||--o{ api_tokens : "user_id"
 ```
 
 ## กลุ่มของตาราง
@@ -192,6 +226,7 @@ erDiagram
 | รอจับคู่ | `ecommerce_orders`, `ecommerce_order_items` | order ของ Shopee/Lazada ก่อนผูกกับรายการจ่าย (ยังไม่ได้ใช้ รอ T1.3) |
 | ใบเสร็จ | `receipts` | รูปใบเสร็จและผลที่อ่านได้ ลูกที่แยกออกมาชี้กลับด้วย `transactions.receipt_id` |
 | ความลับ | `settings` | ค่าที่เข้ารหัส เช่น รหัส PDF ของ KTC |
+| ผู้ใช้ | `users`, `auth_sessions`, `api_tokens` | ผู้ใช้ (admin/member), session จาก Google sign-in และ API token เก็บแค่ sha256 ของความลับ ข้อมูลยังไม่แยกต่อผู้ใช้ (P7.2) |
 
 ## View
 

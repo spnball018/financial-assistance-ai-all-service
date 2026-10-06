@@ -79,7 +79,7 @@ export function EmailSourcesSection({ accounts }: { accounts: Account[] }) {
     <section className="settings-section">
       <h2>แหล่งอีเมล</h2>
       <p className="muted small">
-        Gmail label ที่ระบบดึงอีเมลของแต่ละแหล่ง (กด Refresh ในหน้าตรวจรายการเพื่อดึง) แหล่งที่ยังไม่มีตัวแกะข้อมูลจะถูกข้าม
+        Gmail label ที่ระบบดึงอีเมลของแต่ละแหล่ง (กด "ดึงอีเมลใหม่" ในหน้าตรวจรายการเพื่อดึง) แหล่งที่ยังไม่มีตัวแกะข้อมูลจะถูกข้าม
         และแจ้งในผลการดึง
       </p>
       {error && <div className="message error">{error}</div>}

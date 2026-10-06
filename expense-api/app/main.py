@@ -1,35 +1,58 @@
 import os
+import re
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
+from fastapi.openapi.docs import get_swagger_ui_html
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel
 from sqlalchemy import text
 
+from app.auth import require_user
 from app.db import get_engine
-from app.routers import accounts, categorize, ktc, receipts, reconcile, rules, sync, transactions
+from app.routers import accounts, auth, categorize, ktc, receipts, reconcile, rules, sync, transactions, users
 
+# Swagger is mounted below behind require_user, like everything else
 app = FastAPI(
     title="Expense API",
-    description="Sync, reconcile, categorize and manage expense transactions.",
+    description="Sync, reconcile, categorize and manage expense transactions. "
+                "Sign in through the web UI, or send `Authorization: Bearer <API token>`.",
+    docs_url=None, redoc_url=None, openapi_url=None,
 )
 
-# No auth yet and the data is personal finance: refuse requests whose Host is not ours, so a web page
-# that DNS-rebinds its own domain to 127.0.0.1 cannot read this API from the user's browser.
+# Refuse requests whose Host is not ours, so a web page that DNS-rebinds its own domain to 127.0.0.1
+# cannot reach this API from the user's browser. Add the public hostname to ALLOWED_HOSTS.
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=[
     h.strip() for h in os.environ.get("ALLOWED_HOSTS", "localhost,127.0.0.1,expense-api,testserver").split(",") if h.strip()])
 
-app.include_router(accounts.router)
-app.include_router(ktc.router)
-app.include_router(sync.router)
-app.include_router(categorize.router)
-app.include_router(transactions.router)
-app.include_router(rules.router)
-app.include_router(receipts.router)
-app.include_router(reconcile.router)
+# Open without sign-in: /health and /auth/login, /auth/callback, /auth/logout (tests/test_auth.py)
+app.include_router(auth.router)
+
+protected = APIRouter(dependencies=[Depends(require_user)])
 
 
-@app.get("/categories")
+@app.get("/health", include_in_schema=False)
+def health():
+    return {"ok": True}
+
+
+def _prefix(request: Request) -> str:
+    """/api when reached through the web proxy (nginx / Vite send X-Forwarded-Prefix)."""
+    value = request.headers.get("x-forwarded-prefix", "")
+    return value if re.fullmatch(r"(/[a-z]+)?", value) else ""
+
+
+@protected.get("/openapi.json", include_in_schema=False)
+def openapi(request: Request):
+    return {**app.openapi(), "servers": [{"url": _prefix(request) or "/"}]}
+
+
+@protected.get("/docs", include_in_schema=False)
+def docs(request: Request):
+    return get_swagger_ui_html(openapi_url=_prefix(request) + "/openapi.json", title="Expense API")
+
+
+@protected.get("/categories")
 def list_categories():
     """Flat list ordered so parents precede their children; the UI builds the tree."""
     with get_engine().connect() as conn:
@@ -46,7 +69,7 @@ class EmailSourceUpdate(BaseModel):
     is_active: bool
 
 
-@app.get("/email-sources")
+@protected.get("/email-sources")
 def list_email_sources():
     with get_engine().connect() as conn:
         rows = conn.execute(text(
@@ -55,7 +78,7 @@ def list_email_sources():
         return [dict(r._mapping) for r in rows]
 
 
-@app.put("/email-sources/{source}")
+@protected.put("/email-sources/{source}")
 def update_email_source(source: str, body: EmailSourceUpdate):
     label = (body.gmail_label or "").strip() or None
     if body.is_active and not label:
@@ -71,3 +94,8 @@ def update_email_source(source: str, body: EmailSourceUpdate):
     if row is None:
         raise HTTPException(status_code=404, detail=f"Unknown source '{source}'")
     return dict(row._mapping)
+
+
+for r in (accounts, ktc, sync, categorize, transactions, rules, receipts, reconcile, users):
+    protected.include_router(r.router)
+app.include_router(protected)

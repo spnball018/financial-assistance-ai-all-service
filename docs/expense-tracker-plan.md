@@ -13,7 +13,7 @@ PRD ต้องการให้ผู้ใช้กด Refresh แล้ว�
 - ไม่ทำ refund/cancel ในเฟสนี้ (ใส่ไว้ใน backlog)
 - รายการ KTC ใช้เวลา 00:00 และตั้ง `has_time=false`
 - ทิ้งข้อมูลเก่าแล้วเริ่มใหม่
-- ยังไม่มีระบบ user (ทำ Google Auth ภายหลัง)
+- ~~ยังไม่มีระบบ user~~ → Phase 7 (2026-10-06): Google sign-in, API token, หลายผู้ใช้แยกข้อมูลกัน
 - UI ใช้ React + Vite
 - AI ใช้ Gemini API key ผ่าน SDK `google-genai` ซึ่งสลับไป Vertex ได้ด้วย env
 
@@ -96,6 +96,9 @@ PRD ต้องการให้ผู้ใช้กด Refresh แล้ว�
 | T1.3 marketplace (ยังไม่เริ่ม) | ผู้ใช้ให้ label แล้ว (2026-10-06): `marketplace-shopee`, `marketplace-lazada`, `marketplace-aliexpress`, `marketplace-temu` · AliExpress/Temu ใหม่จากแผนเดิม ต้องเพิ่มค่าใน `email_sources.source` |
 | KTC (T1.5, K1–K4) | เสร็จ (ดู [ktc-track.md](ktc-track.md)) แหล่ง `ktc_pdf` เปิดใช้ใน DB จริงแล้ว ตั้งรหัส PDF ในหน้าตั้งค่า · sync engine: แหล่งที่เพิ่งเปิดดึงย้อน 90 วันของตัวเอง |
 | T2.2 จ่ายบิล KTC = โอน | เสร็จ: `reconcile/card_payments.py` (จ่ายบิล KRUNGTHAI CARD ตรง หรือจับคู่บรรทัดชำระในบิลกับรายการออกรายการเดียว ยอดเท่ากัน −3/+1 วัน) รันหลัง sync และ `POST /reconcile` · พบว่าผู้ใช้จ่ายบิลผ่าน KTB Internet (KBank → บัญชี KTB ของตัวเอง → KTC) ใน DB จริงจับคู่ได้ 1 รายการ (4,000 วันที่ 8 ก.ย.) |
+| P7.1 เข้าสู่ระบบ + ผู้ใช้ | เสร็จ (2026-10-06): migration 0011 (`users`, `auth_sessions`, `api_tokens`), Google sign-in ฝั่ง server (code + PKCE, `app/google_oauth.py`), ทุก route ต้องยืนยันตัวตน (เทสต์ไล่ทุก path ใน OpenAPI), API token (Bearer, เก็บ sha256), CSRF ด้วย `X-Requested-With`, `AUTH_MODE=off` สำหรับ localhost เท่านั้น, หน้าเว็บ: หน้า login, ออกจากระบบ, ตั้งค่า → API token และ ผู้ใช้ (admin), Caddy (`--profile public`) ทำ HTTPS · ทดสอบ e2e ด้วย headless Chrome (session สร้างตรงใน DB ทดสอบ เพราะเข้า Google จริงในเทสต์ไม่ได้) · **ยังไม่ได้ลองกับ Google จริง** |
+| P7.2 แยกข้อมูลต่อผู้ใช้ (ยังไม่เริ่ม) | ผู้ใช้ตัดสินใจ (2026-10-06): แต่ละคนเห็นเฉพาะข้อมูลของตัวเอง **ไม่แชร์กัน**, admin เพิ่มสมาชิกในหน้าตั้งค่า · `user_id` ในทุกตารางข้อมูล (accounts, transactions, merchant_memory, email_sources, raw_emails, receipts, sync_runs, settings, ecommerce_orders) ข้อมูลเดิมเป็นของ user 1, unique key กลายเป็นต่อผู้ใช้, categories ใช้ร่วม (อ่านอย่างเดียว) |
+| P7.3 Gmail ต่อผู้ใช้ (ยังไม่เริ่ม) | แต่ละคนเชื่อม Gmail ของตัวเองจากหน้าเว็บ (refresh token เข้ารหัสใน DB) แทน `token.json` ตัวเดียว · ข้อจำกัดของ Google: scope Gmail เป็น restricted แอปที่ยังไม่ verify ต้องเพิ่มอีเมลเป็น test user และในโหมด Testing refresh token หมดอายุทุก 7 วัน |
 | T6.7 จับคู่การโอน | เสร็จ (ขอบเขตตอนนี้): เสนอคู่ "รายรับที่บันทึกเอง ↔ การโอนเข้าบัญชีเดียวกัน" แล้วผู้ใช้กดรวม (`/reconcile/transfer-matches`, หน้ายอดคงเหลือ) · ยังไม่มี: จับคู่กับข้อมูลฝั่ง wallet ของ marketplace (รอ T1.3) |
 
 **Spec ที่เปลี่ยนจากแผนเดิม**
@@ -228,7 +231,7 @@ PRD ต้องการให้ผู้ใช้กด Refresh แล้ว�
 - อัปเดต CLAUDE.md/README ให้ตรงกับระบบใหม่
 - Backlog:
   - refund/cancel order
-  - Google Auth + multi-user
+  - ~~Google Auth + multi-user~~ ย้ายไป Phase 7
   - ~~เงินเข้าและบัญชีรายรับอื่น~~ ย้ายไป T6.6
   - **บัญชีกองทุน** (ผู้ใช้ขอ 2026-10-05): บัญชีประเภท `investment` จดหน่วยลงทุน, NAV และกำไร/ขาดทุน (ทั้งที่รับรู้แล้วและยังไม่รับรู้) แยกจากรายงานรายจ่าย
   - payment 1 ครั้งที่ครอบคลุมหลาย order
