@@ -130,8 +130,11 @@ def run_sync(engine: Engine, mail: MailClient, now: Optional[datetime] = None) -
             if src["source"] not in REGISTRY:
                 c.error = "no parser registered"
                 continue
+            # a source switched on later (or never fetched) gets its own first-run window
+            with engine.connect() as conn:
+                src_since = since if repo.has_raw_emails(conn, src["source"]) else now - timedelta(days=FIRST_RUN_DAYS)
             try:
-                _fetch_source(engine, mail, src, since, c)
+                _fetch_source(engine, mail, src, src_since, c)
             except MailError as e:
                 c.error = f"gmail: {e}"
                 continue

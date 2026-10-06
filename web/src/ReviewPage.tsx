@@ -9,6 +9,7 @@ const PAGE = 200;
 
 function SourceBadge({ t, uncategorizedId }: { t: Txn; uncategorizedId?: number }) {
   if (t.kind === "transfer") {
+    if (t.ref_transaction_id && t.category_source === "account") return <span className="badge badge-transfer">จ่ายบิลบัตร (จับคู่)</span>;
     const label = { account: "โอน (ตรงเลขบัญชี)", memory: "จำไว้ (โอน)" }[t.category_source as string] ?? "โอน";
     return <span className="badge badge-transfer">{label}</span>;
   }

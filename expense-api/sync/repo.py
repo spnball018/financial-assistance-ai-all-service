@@ -64,6 +64,11 @@ def source_account(conn, source: str) -> Optional[int]:
                         {"s": source}).scalar()
 
 
+def has_raw_emails(conn, source: str) -> bool:
+    return bool(conn.execute(text("SELECT EXISTS (SELECT 1 FROM ledger.raw_emails WHERE source = :s)"),
+                             {"s": source}).scalar())
+
+
 def known_message_ids(conn, ids: list[str]) -> set[str]:
     if not ids:
         return set()

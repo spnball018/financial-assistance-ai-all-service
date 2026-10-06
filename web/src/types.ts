@@ -22,6 +22,7 @@ export interface Txn {
   to_account: string | null;
   memory_action: MemoryAction | null;
   receipt_id: number | null;
+  ref_transaction_id: number | null;
   receipts: number;
   description: string | null;
   category_id: number | null;
@@ -142,4 +143,18 @@ export interface Receipt {
   payment_amount: number | null;
   items_total: number;
   difference: number | null;
+}
+
+export interface TransferMatch {
+  income_id: number;
+  account_id: number;
+  account_name: string;
+  amount: number;
+  income_at: string;
+  income_from: string | null;
+  transfer_id: number;
+  from_account_id: number;
+  from_account_name: string;
+  transfer_at: string;
+  transfer_status: string;
 }

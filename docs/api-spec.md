@@ -139,7 +139,9 @@ Response `200`
 
 Errors: `409` มี sync อื่นกำลังรัน (sync ที่ค้าง `running` นานเกิน 30 นาทีถือว่าตายแล้ว และไม่บล็อก)
 
-หลัง sync เสร็จจะจัดหมวดอัตโนมัติ (เหมือนเรียก `POST /categorize`) และใส่ผลใน key `categorize` ของ response ถ้าการจัดหมวดล้ม sync ยังถือว่าสำเร็จ และ key นี้จะเป็น `{"error": "<ชื่อ exception>"}`
+- แหล่งที่ยังไม่เคยมีอีเมลในระบบ (เช่น เพิ่งเปิด) ดึงย้อนหลัง 90 วันของตัวเอง ไม่ได้ใช้ช่วงเวลาของแหล่งอื่น
+
+หลัง sync เสร็จจะจัดหมวดอัตโนมัติ (เหมือนเรียก `POST /categorize`) และจับคู่การจ่ายบิลบัตร (เหมือน `POST /reconcile`) ผลอยู่ใน key `categorize` และ `reconcile` ของ response ถ้าการจัดหมวดล้ม sync ยังถือว่าสำเร็จ และ key นี้จะเป็น `{"error": "<ชื่อ exception>"}`
 
 #### ✅ `POST /sync/reparse?source={source}`
 parse อีเมลทุกฉบับของแหล่งนั้นที่เก็บใน `raw_emails` ใหม่ ไม่เรียก Gmail ใช้ตอนแก้หรือเพิ่ม parser รันซ้ำได้ไม่ซ้ำข้อมูล เพราะมี `dedup_key`
@@ -230,6 +232,26 @@ Errors: `409` รูปเดิมซ้ำ (เทียบ sha256) · `422` �
 #### ✅ `DELETE /transactions/{id}/receipt-items`
 ยกเลิกการแยก (ลบลูกที่มาจากใบเสร็จ รูปยังอยู่) ใช้ได้เฉพาะรายการ `pending` → `{"removed": 5}`
 
+### จับคู่รายการ (T2.2, T6.7)
+
+#### ✅ `POST /reconcile`
+จับคู่การจ่ายบิลบัตร KTC (รันอัตโนมัติหลัง `POST /sync` ด้วย) แก้เฉพาะรายการ root ที่ `pending` และ `category_source` เป็น `none`/`ai`
+1. จ่ายบิล KBank ให้ `KRUNGTHAI CARD PUBLIC COMPANY LIMITED` → โอนเข้าบัญชีบัตร KTC
+2. บรรทัดชำระเงินในบิล KTC (เช่น `Payment-KTB Internet`) ตรงกับรายการออกจากบัญชีอื่น **รายการเดียว** ยอดเท่ากัน ช่วง 3 วันก่อนถึง 1 วันหลังวันที่ลงบัญชี → โอนเข้าบัตร KTC (`category_source = account`, `ref_transaction_id` = statement) ถ้าตรงหลายรายการจะไม่เดา
+```json
+{"card_payments": {"bill_payments": 0, "matched_by_amount": 1, "ambiguous": 0}}
+```
+
+#### ✅ `GET /reconcile/transfer-matches`
+รายรับ (`kind=income`) ที่น่าจะซ้ำกับการโอนเข้าบัญชีเดียวกันที่มีอยู่แล้ว (ยอดเท่ากัน ห่างไม่เกิน 2 วัน)
+```json
+[{"income_id": 201, "account_id": 6, "account_name": "SCB รายรับ", "amount": 5000.0, "income_at": "...", "income_from": "เงินเข้า",
+  "transfer_id": 150, "from_account_id": 1, "from_account_name": "KBank ใช้จ่าย", "transfer_at": "...", "transfer_status": "confirmed"}]
+```
+
+#### ✅ `POST /reconcile/transfer-matches`
+`{"income_id": 201, "transfer_id": 150}` → ตั้งรายรับนั้นเป็น `ignored` และผูก `ref_transaction_id` กับการโอน (การโอนย้ายยอดให้ทั้งสองบัญชีแล้ว) · `422` ถ้าไม่ใช่คู่ที่ตรงกัน · `404`
+
 ### กฎต่อผู้รับ (Merchant Memory)
 
 #### ✅ `GET /merchant-rules`
@@ -276,7 +298,7 @@ Response `{"is_set": true, "updated_at": "2026-10-05T07:00:00+00:00"}`
     "amount": 269.0, "currency": "THB", "occurred_at": "2026-10-02T17:09:57+00:00", "has_time": true,
     "source": "kbank_email", "channel": "bill_payment",
     "merchant_raw": "MEB CORPORATION .,LTD", "merchant_key": "meb corporation ltd", "description": "bill_payment",
-    "to_account": null, "memory_action": "category", "receipt_id": null, "receipts": 0,
+    "to_account": null, "memory_action": "category", "receipt_id": null, "receipts": 0, "ref_transaction_id": null,
     "category_id": 21, "category_source": "ai", "ai_confidence": 0.9, "ai_reason": "...",
     "confirmed_at": null, "children": []
   }]

@@ -94,7 +94,9 @@ PRD ต้องการให้ผู้ใช้กด Refresh แล้ว�
 | Security review (2026-10-05) | ไล่ตาม checklist ของ `/security-review` กับทุก commit ที่ยังไม่ push: ไม่พบช่องโหว่ระดับสูง/กลางที่มั่นใจ (SQL ใช้ bind parameter ทั้งหมด f-string แทรกแค่ค่าคงที่/ชื่อ field, ไม่มี HTML sink ที่ไม่ปลอดภัยใน React, อัปโหลดรับเฉพาะ image MIME ไม่รับ SVG, รูปถูกส่งกลับด้วย MIME ที่ allowlist, log ไม่มีรหัสผ่าน/PDF) · ปิดเพิ่ม: Host-header allowlist ใน expense-api (กัน DNS rebinding อ่านข้อมูลจาก browser) · ความเสี่ยงที่เหลือ: **ไม่มี auth** (ยอมรับได้เพราะผูก 127.0.0.1) และ gmail-service ยังไม่มี Host allowlist (อยู่ใน submodule) |
 | T3.4 feedback loop | เสร็จ: confirm และการแก้หมวดรายการที่ confirm แล้วจะบันทึก memory และใช้กับรายการ pending ร้านเดียวกันทันที |
 | T1.3 marketplace (ยังไม่เริ่ม) | ผู้ใช้ให้ label แล้ว (2026-10-06): `marketplace-shopee`, `marketplace-lazada`, `marketplace-aliexpress`, `marketplace-temu` · AliExpress/Temu ใหม่จากแผนเดิม ต้องเพิ่มค่าใน `email_sources.source` |
-| KTC (T1.5) | แยกไป [ktc-track.md](ktc-track.md) label: `financial-ktc-[card]` (ชื่อจริง) |
+| KTC (T1.5, K1–K4) | เสร็จ (ดู [ktc-track.md](ktc-track.md)) แหล่ง `ktc_pdf` เปิดใช้ใน DB จริงแล้ว ตั้งรหัส PDF ในหน้าตั้งค่า · sync engine: แหล่งที่เพิ่งเปิดดึงย้อน 90 วันของตัวเอง |
+| T2.2 จ่ายบิล KTC = โอน | เสร็จ: `reconcile/card_payments.py` (จ่ายบิล KRUNGTHAI CARD ตรง หรือจับคู่บรรทัดชำระในบิลกับรายการออกรายการเดียว ยอดเท่ากัน −3/+1 วัน) รันหลัง sync และ `POST /reconcile` · พบว่าผู้ใช้จ่ายบิลผ่าน KTB Internet (KBank → บัญชี KTB ของตัวเอง → KTC) ใน DB จริงจับคู่ได้ 1 รายการ (4,000 วันที่ 8 ก.ย.) |
+| T6.7 จับคู่การโอน | เสร็จ (ขอบเขตตอนนี้): เสนอคู่ "รายรับที่บันทึกเอง ↔ การโอนเข้าบัญชีเดียวกัน" แล้วผู้ใช้กดรวม (`/reconcile/transfer-matches`, หน้ายอดคงเหลือ) · ยังไม่มี: จับคู่กับข้อมูลฝั่ง wallet ของ marketplace (รอ T1.3) |
 
 **Spec ที่เปลี่ยนจากแผนเดิม**
 - **gmail-service ไม่มี logic การเงิน**: เป็นแค่ตัวกลางอ่าน Gmail ทั่วไป มี endpoint `GET /api/messages/{id}`, `GET /api/messages/{id}/attachments/{att_id}`, `DELETE /api/messages/{id}` (ย้ายไป Trash เท่านั้น) และ `page_token` ใน `/api/emails`

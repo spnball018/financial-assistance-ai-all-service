@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 
@@ -137,3 +137,25 @@ def test_balanced_tree_not_flagged_and_only_leaves_are_reportable(db):
         conn.execute(text("UPDATE ledger.transactions SET status='confirmed'"))
     assert scalar(db, "SELECT needs_review FROM ledger.transactions WHERE dedup_key='t:root'") is False
     assert scalar(db, "SELECT sum(amount) FROM ledger.v_reportable_expenses") == Decimal("90.00")
+
+
+def test_new_source_gets_its_own_first_run_window(db):
+    class RecordingMail(FakeMailClient):
+        def __init__(self):
+            super().__init__({})
+            self.queries = []
+
+        def list_message_ids(self, label, date_after, search_text=None, page_token=None):
+            self.queries.append((label, date_after))
+            return [], None
+
+    now = datetime(2026, 10, 6, tzinfo=TZ)
+    sync_engine.run_sync(db, FakeMailClient(kbank_messages()), now=now)   # kbank fetched once
+    with db.begin() as conn:
+        conn.execute(text("UPDATE ledger.email_sources SET is_active = true, gmail_label = 'x' "
+                          "WHERE source = 'ktc_pdf'"))
+    mail = RecordingMail()
+    sync_engine.run_sync(db, mail, now=now + timedelta(days=1))
+    after = dict(mail.queries)
+    assert after["financial-kasikorn"] == "2026/10/05"   # last success (10/06) - 1 day overlap
+    assert after["x"] == "2026/07/09"                    # 90 days back: ktc never fetched before

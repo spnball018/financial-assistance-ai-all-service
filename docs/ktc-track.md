@@ -177,4 +177,4 @@ expense-api/
 | K1 `/parse-ktc-pdf` | เสร็จ: เทสต์ 8 ข้อผ่าน และทดสอบกับ statement จริง 1 ฉบับแล้ว (10 รายการ ตรวจยอดผ่าน) ยังไม่ได้ลองรันใน docker (ใช้ Python 3.10 ใน Dockerfile) และยังไม่ได้ curl กับ container |
 | K2 `sources/ktc.py` | เสร็จ: เทสต์ 13 ข้อ (ใช้ JSON สมมติ) และทดสอบ end-to-end กับ PDF จริงผ่าน service ในเครื่อง (8 ลูก + ข้าม 2) ยังไม่ได้รันผ่าน sync engine กับ DB จริง |
 | K3 รหัสผ่าน KTC | เสร็จ (main track ทำแทน 2026-10-06): `PUT/GET status/DELETE /settings/ktc-password` ผ่าน `app.secrets`, หน้าตั้งค่ามีช่องใส่รหัส, เทสต์ 3 ข้อ |
-| K4 เทสต์/fixture | ยังไม่เริ่ม |
+| K4 เทสต์/fixture | เสร็จ (main track 2026-10-06): service ผ่าน 8 ข้อรวม PDF จริง, `tests/test_ktc_real_pdf.py` ทดสอบ PDF จริง → service → `sources/ktc.py` → DB, **sync จริงแล้ว**: แหล่ง `ktc_pdf` เปิดด้วย label `financial-ktc-[card]` ได้ statement 2 ใบ (ก.ค., ก.ย.) 17 รายการ ยอดลูกตรงแม่ทั้งคู่ · Dockerfile ของ service ยังไม่ได้ลองใน docker |

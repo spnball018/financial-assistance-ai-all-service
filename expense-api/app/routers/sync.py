@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.db import get_engine
 from categorize.ai import classifier_from_env
 from categorize.service import categorize_pending
+from reconcile.card_payments import link_card_payments
 from sync import engine as sync_engine
 from sync import repo
 from sync.gmail_client import GmailServiceClient, MailClient
@@ -29,7 +30,12 @@ def run_sync(mail: MailClient = Depends(get_mail_client)):
         categorized = categorize_pending(get_engine(), classifier_from_env())
     except Exception as e:  # the sync itself succeeded; categorizing can be re-run via POST /categorize
         categorized = {"error": type(e).__name__}
-    return {"run_id": result.run_id, "counts": result.counts, "categorize": categorized}
+    try:
+        with get_engine().begin() as conn:
+            reconciled = link_card_payments(conn)
+    except Exception as e:  # same: re-runnable via POST /reconcile
+        reconciled = {"error": type(e).__name__}
+    return {"run_id": result.run_id, "counts": result.counts, "categorize": categorized, "reconcile": reconciled}
 
 
 @router.post("/reparse")

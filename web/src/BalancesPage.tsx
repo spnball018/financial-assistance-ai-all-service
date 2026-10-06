@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
 import { fmtMoney, fmtWhen } from "./format";
-import type { Balance } from "./types";
+import type { Balance, TransferMatch } from "./types";
 
 function OpeningEditor({ b, onSaved }: { b: Balance; onSaved: () => void }) {
   const [amount, setAmount] = useState(b.opening ? String(b.opening.amount) : "");
@@ -43,7 +43,19 @@ export function BalancesPage() {
   const [error, setError] = useState<string | null>(null);
   const [showInactive, setShowInactive] = useState(false);
 
-  const load = () => api.balances().then(setRows, (e: Error) => setError(e.message));
+  const [matches, setMatches] = useState<TransferMatch[]>([]);
+  const load = () => {
+    api.balances().then(setRows, (e: Error) => setError(e.message));
+    api.transferMatches().then(setMatches, () => {});
+  };
+  const link = async (m: TransferMatch) => {
+    try {
+      await api.linkTransfer(m.income_id, m.transfer_id);
+      load();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
   useEffect(() => {
     load();
   }, []);
@@ -65,6 +77,28 @@ export function BalancesPage() {
         (การโอนเข้าบัญชีตัวเองจะย้ายยอดจากบัญชีหนึ่งไปอีกบัญชี) บัตรเครดิตใส่ติดลบสำหรับยอดค้าง
       </p>
       {error && <div className="message error">{error}</div>}
+      {matches.length > 0 && (
+        <div className="transfers">
+          <h2>อาจบันทึกซ้ำ ({matches.length})</h2>
+          <p className="muted small">
+            รายรับที่บันทึกเองตรงกับการโอนจากบัญชีของคุณ (ยอดเท่ากัน ห่างไม่เกิน 2 วัน) ถ้าเป็นเงินก้อนเดียวกัน กด "รวม"
+            รายรับนั้นจะไม่ถูกนับซ้ำ (การโอนย้ายยอดให้แล้ว)
+          </p>
+          <ul className="subs">
+            {matches.map((m) => (
+              <li key={`${m.income_id}-${m.transfer_id}`}>
+                <span>
+                  {m.account_name}: รายรับ {fmtMoney(m.amount)} ({fmtWhen(m.income_at, true)}
+                  {m.income_from ? ` · ${m.income_from}` : ""}) ↔ โอนจาก {m.from_account_name} ({fmtWhen(m.transfer_at, true)})
+                </span>
+                <button className="link" onClick={() => link(m)}>
+                  รวม
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       <div className="table-wrap">
         <table className="balances">
           <thead>

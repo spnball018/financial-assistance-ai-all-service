@@ -1,4 +1,4 @@
-import type { Account, AccountInput, Balance, Category, EmailSource, MerchantRule, Receipt, ConfirmResult, Status, Summary, SyncResult, Txn } from "./types";
+import type { Account, AccountInput, Balance, Category, EmailSource, MerchantRule, Receipt, TransferMatch, ConfirmResult, Status, Summary, SyncResult, Txn } from "./types";
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -56,6 +56,9 @@ export const api = {
     fetch("/api/settings/ktc-password", { method: "DELETE" }).then((r) => {
       if (!r.ok) throw new ApiError(r.status, r.statusText);
     }),
+  transferMatches: () => call<TransferMatch[]>("/reconcile/transfer-matches"),
+  linkTransfer: (income_id: number, transfer_id: number) =>
+    call<TransferMatch>("/reconcile/transfer-matches", { method: "POST", body: JSON.stringify({ income_id, transfer_id }) }),
   rules: () => call<MerchantRule[]>("/merchant-rules"),
   deleteRule: (key: string) =>
     fetch(`/api/merchant-rules?merchant_key=${encodeURIComponent(key)}`, { method: "DELETE" }).then((r) => {
