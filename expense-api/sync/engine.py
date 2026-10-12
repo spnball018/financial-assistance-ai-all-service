@@ -3,6 +3,7 @@
 No SQL here (sync/repo.py) and no Gmail HTTP details (sync/gmail_client.py).
 """
 import logging
+import os
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -17,7 +18,8 @@ from sync.gmail_client import MailClient, MailError
 
 log = logging.getLogger("sync")
 
-FIRST_RUN_DAYS = 90
+# how far back the first sync of a source goes; SYNC_FIRST_RUN_DAYS in .env, default 90
+FIRST_RUN_DAYS = int(os.environ.get("SYNC_FIRST_RUN_DAYS", "90"))
 OVERLAP_DAYS = 1
 
 
