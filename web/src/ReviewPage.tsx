@@ -451,7 +451,7 @@ export function ReviewPage({ categories, accounts }: { categories: Category[]; a
           </button>
         </div>
       )}
-      {detailId !== null && <TxnDetailPanel id={detailId} onClose={() => setDetailId(null)} />}
+      {detailId !== null && <TxnDetailPanel id={detailId} onClose={() => setDetailId(null)} onChanged={load} />}
       {walletImport && <WalletImportPanel accounts={accounts} onClose={() => setWalletImport(false)} onSaved={load} />}
     </section>
   );

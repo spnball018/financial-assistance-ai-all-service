@@ -130,7 +130,14 @@ export function SummaryPage() {
           )}
         </>
       )}
-      {detailId !== null && <TxnDetailPanel id={detailId} onClose={() => setDetailId(null)} />}
+      {detailId !== null && <TxnDetailPanel
+          id={detailId}
+          onClose={() => setDetailId(null)}
+          onChanged={() => {
+            api.summary(month).then(setData, (e: Error) => setError(e.message));
+            if (open !== null) api.reportExpenses(month, open).then(setRows, (e: Error) => setError(e.message));
+          }}
+        />}
     </section>
   );
 }

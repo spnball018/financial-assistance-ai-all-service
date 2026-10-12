@@ -54,6 +54,7 @@ export const api = {
     call<User>(`/users/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   categories: () => call<Category[]>("/categories"),
   accounts: () => call<Account[]>("/accounts"),
+  deleteTransaction: (id: number) => noContent(`/transactions/${id}`, { method: "DELETE" }),
   balances: () => call<Balance[]>("/accounts/balances"),
   setOpening: (id: number, body: { amount: string; as_of: string }) =>
     call<{ amount: number; as_of: string }>(`/accounts/${id}/opening-balance`, { method: "PUT", body: JSON.stringify(body) }),
@@ -87,6 +88,12 @@ export const api = {
       transfer_account_id?: number;
       status?: "pending" | "ignored";
       remember?: boolean;
+      // manual entries only
+      amount?: string;
+      occurred_at?: string;
+      has_time?: boolean;
+      account_id?: number;
+      merchant?: string | null;
     },
   ) =>
     call<Txn>(`/transactions/${id}`, { method: "PATCH", body: JSON.stringify(body) }),

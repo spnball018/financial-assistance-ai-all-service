@@ -77,17 +77,38 @@ class TransactionPatch(BaseModel):
     description: Optional[str] = None
     status: Optional[Literal["pending", "ignored"]] = None
     remember: Optional[bool] = None
+    # manual entries only: fix what was typed in
+    amount: Optional[Decimal] = Field(default=None, gt=0, max_digits=15, decimal_places=2)
+    occurred_at: Optional[datetime] = None
+    has_time: Optional[bool] = None
+    account_id: Optional[int] = None
+    merchant: Optional[str] = None
 
 
 @router.patch("/transactions/{txn_id}")
 def patch_transaction(txn_id: int, body: TransactionPatch, uid: int = Depends(current_user_id)):
     """Only the fields sent are changed. category_id = expense in that category; transfer_account_id =
     transfer to one of the user's accounts (not counted as an expense); remember=false = never learn
-    a rule for this payee."""
+    a rule for this payee. A manually entered row can also change amount, occurred_at, has_time,
+    account_id and merchant."""
+    fields = body.model_fields_set
     with get_engine().begin() as conn:
+        manual = fields & txns.MANUAL_FIELDS
+        if manual:
+            _run(lambda: txns.edit_manual(conn, uid, txn_id, fields=manual, amount=body.amount,
+                                          occurred_at=body.occurred_at, has_time=body.has_time,
+                                          account_id=body.account_id, merchant=body.merchant))
         return _run(lambda: txns.update(conn, uid, txn_id, category_id=body.category_id,
                                         transfer_account_id=body.transfer_account_id, description=body.description,
-                                        status=body.status, remember=body.remember, fields=body.model_fields_set))
+                                        status=body.status, remember=body.remember, fields=fields - manual))
+
+
+@router.delete("/transactions/{txn_id}", status_code=204)
+def delete_transaction(txn_id: int, uid: int = Depends(current_user_id)):
+    """Delete a manually entered transaction (rows from email or statements cannot be deleted)."""
+    with get_engine().begin() as conn:
+        _run(lambda: txns.delete_manual(conn, uid, txn_id))
+    return Response(status_code=204)
 
 
 class ConfirmRequest(BaseModel):

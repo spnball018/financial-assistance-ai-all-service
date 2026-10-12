@@ -345,3 +345,58 @@ def email_body(conn, uid: int, txn_id: int) -> tuple[str, bool]:
     r = conn.execute(text("SELECT html_body, text_body FROM ledger.raw_emails WHERE id = :id AND user_id = :uid"),
                      {"id": email_id, "uid": uid}).one()
     return (r.html_body, True) if r.html_body else (r.text_body or "", False)
+
+
+MANUAL_FIELDS = {"amount", "occurred_at", "has_time", "account_id", "merchant"}
+
+
+def _manual(conn, uid: int, txn_id: int) -> dict:
+    t = get_one(conn, uid, txn_id)
+    if t["source"] != "manual" or t["node_type"] != "manual":
+        raise Invalid("only a manually entered transaction can be edited or deleted this way "
+                      "(rows from email or statements stay as the bank reported them)")
+    return t
+
+
+def edit_manual(conn, uid: int, txn_id: int, *, fields: set[str], amount: Optional[Decimal] = None,
+                occurred_at: Optional[datetime] = None, has_time: Optional[bool] = None,
+                account_id: Optional[int] = None, merchant: Optional[str] = None) -> None:
+    """Fix a manual entry's amount, time, account or payee (e.g. a transfer dated after an opening balance)."""
+    t = _manual(conn, uid, txn_id)
+    sets, params = [], {"id": txn_id}
+    if "amount" in fields:
+        if amount is None or amount <= 0:
+            raise Invalid("amount must be positive")
+        sets.append("amount = :amount")
+        params["amount"] = amount
+    if "occurred_at" in fields:
+        if occurred_at is None or occurred_at.tzinfo is None:
+            raise Invalid("occurred_at needs a timezone, e.g. 2026-10-05T12:30:00+07:00")
+        sets.append("occurred_at = :at")
+        params["at"] = occurred_at
+    if "has_time" in fields:
+        if has_time is None:
+            raise Invalid("has_time must be true or false")
+        sets.append("has_time = :ht")
+        params["ht"] = has_time
+    if "account_id" in fields:
+        if account_id is None or not conn.execute(text(
+                "SELECT EXISTS (SELECT 1 FROM ledger.accounts WHERE id = :a AND user_id = :uid)"),
+                {"a": account_id, "uid": uid}).scalar():
+            raise Invalid(f"account {account_id} does not exist")
+        if t["kind"] == "transfer" and account_id == t["counter_account_id"]:
+            raise Invalid("a transfer must go to a different account")
+        sets.append("account_id = :acc")
+        params["acc"] = account_id
+    if "merchant" in fields:
+        sets.append("merchant_raw = :m, merchant_key = :k")
+        params["m"] = merchant or None
+        params["k"] = normalize_merchant(merchant)
+    if sets:
+        conn.execute(text(f"UPDATE ledger.transactions SET {', '.join(sets)}, updated_at = now() WHERE id = :id"),
+                     params)
+
+
+def delete_manual(conn, uid: int, txn_id: int) -> None:
+    _manual(conn, uid, txn_id)
+    conn.execute(text("DELETE FROM ledger.transactions WHERE id = :id AND user_id = :uid"), {"id": txn_id, "uid": uid})

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
 import { CHANNEL_LABEL, fmtMoney, fmtWhen } from "./format";
-import type { TxnDetails } from "./types";
+import type { Account, TxnDetails } from "./types";
 
 const STATUS_LABEL: Record<string, string> = { pending: "รอตรวจ", confirmed: "ยืนยันแล้ว", ignored: "ไม่นับ" };
 const SOURCE_LABEL: Record<string, string> = {
@@ -36,16 +36,76 @@ const RAW_LABEL: Record<string, string> = {
 const EMAIL_CSP =
   "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline'; img-src data:\">";
 
-export function TxnDetailPanel({ id, onClose }: { id: number; onClose: () => void }) {
+/** "2026-10-05T14:30:00+07:00" -> date and time as shown in Thailand. */
+function bangkokParts(iso: string): { date: string; time: string } {
+  const p = Object.fromEntries(
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+    }).formatToParts(new Date(iso)).map((x) => [x.type, x.value]),
+  );
+  return { date: `${p.year}-${p.month}-${p.day}`, time: `${p.hour}:${p.minute}` };
+}
+
+type Draft = { date: string; time: string; hasTime: boolean; amount: string; accountId: number; merchant: string; description: string };
+
+export function TxnDetailPanel({ id, onClose, onChanged }: { id: number; onClose: () => void; onChanged?: () => void }) {
   const [d, setD] = useState<TxnDetails | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [email, setEmail] = useState<string | null>(null);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [draft, setDraft] = useState<Draft | null>(null);
+  const [saving, setSaving] = useState(false);
 
+  const load = () => api.txnDetails(id).then(setD, (e: Error) => setError(e.message));
   useEffect(() => {
     setD(null);
     setEmail(null);
-    api.txnDetails(id).then(setD, (e: Error) => setError(e.message));
+    setDraft(null);
+    load();
   }, [id]);
+
+  // only what the user typed in can be edited; rows from email stay as the bank reported them
+  const manual = d?.source === "manual" && d.node_type === "manual";
+  const startEdit = async () => {
+    if (!d) return;
+    if (accounts.length === 0) setAccounts(await api.accounts());
+    const { date, time } = bangkokParts(d.occurred_at);
+    setDraft({ date, time, hasTime: d.has_time, amount: String(d.amount), accountId: d.account_id,
+               merchant: d.merchant_raw ?? "", description: d.description ?? "" });
+  };
+  const saveEdit = async () => {
+    if (!draft) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await api.patch(id, {
+        occurred_at: `${draft.date}T${draft.hasTime ? draft.time : "00:00"}:00+07:00`,
+        has_time: draft.hasTime,
+        amount: draft.amount,
+        account_id: draft.accountId,
+        merchant: draft.merchant.trim() || null,
+        description: draft.description.trim() || null,
+      });
+      setDraft(null);
+      await load();
+      onChanged?.();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+  const remove = async () => {
+    if (!window.confirm("ลบรายการที่บันทึกเองนี้? ลบแล้วกู้คืนไม่ได้")) return;
+    try {
+      await api.deleteTransaction(id);
+      onChanged?.();
+      onClose();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -103,7 +163,68 @@ export function TxnDetailPanel({ id, onClose }: { id: number; onClose: () => voi
           </button>
         </div>
         {error && <div className="message error">{error}</div>}
-        {d && (
+        {manual && !draft && (
+          <div className="toolbar">
+            <button onClick={startEdit}>แก้ไข</button>
+            <button className="link danger" onClick={remove}>
+              ลบ
+            </button>
+          </div>
+        )}
+        {draft && (
+          <div className="form-grid edit-manual">
+            <label>
+              วันที่
+              <input type="date" value={draft.date} onChange={(e) => setDraft({ ...draft, date: e.target.value })} />
+            </label>
+            <label>
+              เวลา
+              <span className="inline">
+                <input type="time" value={draft.time} disabled={!draft.hasTime}
+                  onChange={(e) => setDraft({ ...draft, time: e.target.value })} />
+                <span className="small muted">
+                  <input type="checkbox" checked={!draft.hasTime}
+                    onChange={(e) => setDraft({ ...draft, hasTime: !e.target.checked })} /> ไม่ระบุเวลา
+                </span>
+              </span>
+            </label>
+            <label>
+              จำนวนเงิน (บาท)
+              <input inputMode="decimal" value={draft.amount}
+                onChange={(e) => setDraft({ ...draft, amount: e.target.value.replace(/[^\d.]/g, "") })} />
+            </label>
+            <label>
+              {d?.kind === "transfer" ? "จากบัญชี" : "บัญชี"}
+              <select value={draft.accountId} onChange={(e) => setDraft({ ...draft, accountId: Number(e.target.value) })}>
+                {accounts.filter((a) => a.is_active || a.id === draft.accountId).map((a) => (
+                  <option key={a.id} value={a.id} disabled={d?.kind === "transfer" && a.id === d.counter_account_id}>
+                    {a.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              {d?.kind === "income" ? "ผู้จ่าย" : d?.kind === "transfer" ? "รายละเอียด" : "ร้าน / ผู้รับ"}
+              <input value={draft.merchant} onChange={(e) => setDraft({ ...draft, merchant: e.target.value })} />
+            </label>
+            <label>
+              บันทึกเพิ่มเติม
+              <input value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} />
+            </label>
+            <div className="full actions">
+              <button className="primary" disabled={saving || !(Number(draft.amount) > 0) || !draft.date} onClick={saveEdit}>
+                {saving ? "กำลังบันทึก…" : "บันทึก"}
+              </button>
+              <button className="link" onClick={() => setDraft(null)}>
+                ยกเลิก
+              </button>
+              <span className="muted small">
+                {d?.kind === "transfer" ? "บัญชีปลายทาง" : "หมวด"}เปลี่ยนได้ที่ dropdown ในหน้าตรวจรายการ
+              </span>
+            </div>
+          </div>
+        )}
+        {d && !draft && (
           <>
             <dl className="details">
               {rows.map(([k, v]) => (

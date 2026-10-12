@@ -177,3 +177,23 @@ def test_manual_transfer_between_own_accounts(api, db):
     assert api.post("/transactions", json={**body, "transfer_account_id": 1}).status_code == 422   # same account
     assert api.post("/transactions", json={**body, "transfer_account_id": None}).status_code == 422
     assert api.post("/transactions", json={**body, "kind": "expense"}).status_code == 422          # no category
+
+
+def test_edit_and_delete_manual_entry_only(api, db):
+    body = {"account_id": 1, "amount": "500", "occurred_at": "2026-09-02T10:00:00+07:00", "kind": "transfer",
+            "transfer_account_id": 3}
+    t = api.post("/transactions", json=body).json()["id"]
+    r = api.patch(f"/transactions/{t}", json={"occurred_at": "2026-08-30T09:00:00+07:00", "amount": "450",
+                                               "account_id": 4, "merchant": "ย้ายเงิน"})
+    assert r.status_code == 200
+    got = r.json()
+    assert (got["occurred_at"][:10], Decimal(str(got["amount"])), got["account_id"], got["merchant_raw"]) == (
+        "2026-08-30", Decimal("450.00"), 4, "ย้ายเงิน")
+    assert api.patch(f"/transactions/{t}", json={"account_id": 3}).status_code == 422          # = destination
+    assert api.patch(f"/transactions/{t}", json={"occurred_at": "2026-08-30T09:00:00"}).status_code == 422
+    # rows from email (or the opening balance) are not editable or deletable this way
+    mail = add(db, "k", "SHOP", "100")
+    assert api.patch(f"/transactions/{mail}", json={"amount": "1"}).status_code == 422
+    assert api.delete(f"/transactions/{mail}").status_code == 422
+    assert api.delete(f"/transactions/{t}").status_code == 204
+    assert api.get(f"/transactions/{t}").status_code == 404

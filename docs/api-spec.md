@@ -436,6 +436,11 @@ Response `{"is_set": true, "updated_at": "2026-10-05T07:00:00+00:00"}`
 
 Errors: `404` · `422` หมวดใช้ไม่ได้ หรือเปลี่ยนสถานะไม่ได้
 
+- **รายการที่บันทึกเอง** (`source = manual`, `node_type = manual`) แก้ `amount`, `occurred_at`, `has_time`, `account_id`, `merchant` ได้เพิ่ม (เช่น ใส่วันโอนผิดจนไปอยู่หลังยอดยกมา) รายการจากอีเมล/บิลได้ `422`
+
+#### ✅ `DELETE /transactions/{id}` → 204
+ลบรายการที่บันทึกเอง (ยอดยกมาลบที่ `DELETE /accounts/{id}/opening-balance`) รายการจากอีเมล/บิลได้ `422`
+
 #### ✅ `POST /transactions/confirm`
 ```json
 {"ids": [140, 141]}
