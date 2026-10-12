@@ -121,8 +121,9 @@ def test_two_bank_rows_are_ambiguous(api, db):
     assert api.post(f"/wallet-screenshots/{shot['id']}/apply", json={}).json()["top_ups"][0]["status"] == "ambiguous"
 
 
-def test_only_ewallets_duplicates_and_image(api, db):
+def test_only_ewallets_and_cards_duplicates_and_image(api, db):
     assert upload(api, 1).status_code == 422          # a bank account
+    assert upload(api, acct(db, "บัตรเครดิต KTC"), PNG + b"card").status_code == 201
     assert upload(api, 999999).status_code == 404
     tm = acct(db, "TrueMoney")
     shot = upload(api, tm).json()

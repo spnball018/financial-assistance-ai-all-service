@@ -1,11 +1,13 @@
-"""E-wallet history from app screenshots (TrueMoney, ...), handled like a card statement: the wallet is an
-account with its own rows, and money moved into it from the bank is a transfer, not spending.
+"""E-wallet or credit card history from app screenshots (TrueMoney, a Bangkok Bank card, ...), handled
+like a card statement: the wallet/card is an account with its own rows, and money moved into it from the
+bank (a top-up, or paying the card) is a transfer, not spending.
 
 upload -> read (vision model proposes entries) -> apply (the user may edit the entries first):
 - out (payment, transfer to a person): a pending expense on the wallet account
 - in (refund, cashback, transfer from a person): a pending income on the wallet account
-- top_up: no row of its own. It is matched to the bank row that paid it (payee looks like the wallet, same
-  amount, within 10 minutes), and that row becomes a transfer bank -> wallet, as KTC bill payments do.
+- top_up (or a payment to the card): no row of its own. It is matched to the bank row that paid it (payee
+  looks like the wallet/card issuer, same amount, within 10 minutes), and that row becomes a transfer
+  bank -> wallet, as KTC bill payments do.
 Overlapping screenshots are fine: a row's dedup_key is wallet + minute + amount + direction. With the
 reading as is, rows whose date is not on screen (date_shown false) and empty rows are left out; an edited
 list from the user is taken as it is.
@@ -28,8 +30,9 @@ BKK = timezone(timedelta(hours=7))
 TOPUP_WINDOW = timedelta(minutes=10)
 KIND_LABEL = {"payment": "จ่ายเงิน", "transfer_out": "โอนเงินออก", "transfer_in": "รับเงินโอน", "refund": "คืนเงิน",
               "cashback": "เงินคืน", "other": "อื่นๆ", "top_up": "เติมเงิน"}
-# how the bank names the wallet when it is topped up; other wallets fall back to their institution/name
-TOPUP_PAYEE = {"truemoney": r"true ?money"}
+# how the bank names the wallet or card issuer when it is paid; others fall back to their institution/name
+TOPUP_PAYEE = {"truemoney": r"true ?money", "bangkokbank": r"bangkok ?bank|ธนาคารกรุงเทพ|bualuang|บัวหลวง"}
+ACCOUNT_TYPES = {"ewallet": "e-wallet", "credit_card": "credit card"}
 
 _COLS = ("id, account_id, storage_uri, mime_type, sha256, uploaded_at, ocr_status, ocr_result, ocr_model, ocr_error, "
          "applied_at")
@@ -40,8 +43,8 @@ def _wallet(conn, uid: int, account_id: int):
                      {"a": account_id, "uid": uid}).first()
     if a is None:
         raise NotFound(account_id)
-    if a.type != "ewallet":
-        raise Invalid("screenshots are for e-wallet accounts")
+    if a.type not in ACCOUNT_TYPES:
+        raise Invalid("screenshots are for e-wallet and credit card accounts")
     return a
 
 
@@ -94,7 +97,7 @@ def read(engine, uid: int, shot_id: int, reader: Optional[WalletReader]) -> dict
         data, mime = image(conn, uid, shot_id)
         wallet = _wallet(conn, uid, shot["account_id"])
     try:
-        reading = reader.read(data, mime, wallet.institution or wallet.name)
+        reading = reader.read(data, mime, f"{wallet.institution or wallet.name} {ACCOUNT_TYPES[wallet.type]}")
         with engine.begin() as conn:
             conn.execute(text("UPDATE ledger.wallet_screenshots SET ocr_status = 'done', ocr_result = CAST(:r AS jsonb), "
                               "ocr_model = :m, ocr_error = NULL WHERE id = :id"),

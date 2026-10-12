@@ -33,7 +33,7 @@ class WalletReader(Protocol):
     def read(self, image: bytes, mime_type: str, wallet: str) -> WalletReading: ...
 
 
-_PROMPT = """This is a screenshot, or a photo of a phone screen, from the {wallet} e-wallet app (Thailand):
+_PROMPT = """This is a screenshot, or a photo of a phone screen, from the {wallet} app (Thailand):
 a transaction history list or a single transaction slip. Return every transaction row visible on the
 screen, top to bottom, one entry each.
 - occurred_at: date and time as "YYYY-MM-DD HH:MM". Thai dates use the Buddhist Era (e.g. 2569 or 69): convert
@@ -45,9 +45,11 @@ screen, top to bottom, one entry each.
 - title: the merchant, payee or description exactly as shown (Thai or English).
 - amount: positive number in THB. direction: "out" when money left the wallet (minus sign, e.g. "-฿ 87.00"),
   "in" when it came in (plus sign, usually green, e.g. "+฿ 2,000.00").
-- kind: top_up (money added from a bank or card, e.g. "เติมเงินผ่านบัญชีธนาคาร"), payment (shop, bill, app
-  store, subscription, card payment), transfer_out (sent to a person), transfer_in (received from a
-  person), refund, cashback, or other.
+- kind: top_up (money added from a bank or card, e.g. "เติมเงินผ่านบัญชีธนาคาร"; for a credit card, a
+  payment of the card bill such as "ชำระบัตร", "ชำระยอดบัตร" or "Payment - Thank you", direction "in"),
+  payment (shop, bill, app store, subscription, card purchase), transfer_out (sent to a person),
+  transfer_in (received from a person), refund, cashback, or other.
+  For a credit card, purchases are "out" even when the app shows them without a minus sign.
 - uncertain: true when glare, reflection or the screen edge hides any digit of the amount or time; give
   your best reading anyway.
 Skip a row that is cut off by the top or bottom edge of the screen so that its title or its amount is not

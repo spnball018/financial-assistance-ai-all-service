@@ -5,7 +5,7 @@ import type { Account, WalletApplyResult, WalletEntry, WalletEntryKind, WalletSc
 
 const KIND_LABEL: Record<WalletEntryKind, string> = {
   payment: "จ่ายเงิน",
-  top_up: "เติมเงิน",
+  top_up: "เติมเงิน / ชำระบัตร",
   transfer_out: "โอนออก",
   transfer_in: "รับโอน",
   refund: "คืนเงิน",
@@ -13,7 +13,7 @@ const KIND_LABEL: Record<WalletEntryKind, string> = {
   other: "อื่นๆ",
 };
 const TOPUP_LABEL: Record<WalletApplyResult["top_ups"][number]["status"], string> = {
-  linked: "จับคู่กับรายการธนาคารแล้ว (เปลี่ยนเป็นโอนเข้า wallet)",
+  linked: "จับคู่กับรายการธนาคารแล้ว (เปลี่ยนเป็นโอนเข้าบัญชีนี้)",
   already: "จับคู่ไว้แล้ว",
   not_found: "ไม่พบรายการธนาคารที่ยอดและเวลาตรง",
   ambiguous: "พบรายการธนาคารที่ตรงหลายรายการ ไม่ได้จับคู่",
@@ -38,7 +38,7 @@ export function WalletImportPanel({ accounts, onClose, onSaved }: {
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const wallets = accounts.filter((a) => a.type === "ewallet" && a.is_active);
+  const wallets = accounts.filter((a) => (a.type === "ewallet" || a.type === "credit_card") && a.is_active);
   const [accountId, setAccountId] = useState<number | null>(
     (wallets.find((a) => /true ?money/i.test(a.institution ?? a.name)) ?? wallets[0])?.id ?? null,
   );
@@ -111,10 +111,10 @@ export function WalletImportPanel({ accounts, onClose, onSaved }: {
       <div className="panel wide" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
         <div className="panel-head">
           <div>
-            <div className="merchant">นำเข้ารายการจากรูปหน้าจอ wallet</div>
+            <div className="merchant">นำเข้ารายการจากรูปหน้าจอแอป (wallet / บัตรเครดิต)</div>
             <div className="muted small">
               ถ่ายรูปหน้าประวัติรายการในแอป ให้แต่ละรูปซ้อนกันเล็กน้อย รายการเดิมจะไม่ถูกบันทึกซ้ำ ·
-              การเติมเงินจะจับคู่กับรายการธนาคารแล้วเปลี่ยนเป็นการโอนเข้า wallet
+              การเติมเงินหรือชำระบัตรจะจับคู่กับรายการธนาคารแล้วเปลี่ยนเป็นการโอนเข้าบัญชีนี้
             </div>
           </div>
           <div className="spacer" />
@@ -123,7 +123,7 @@ export function WalletImportPanel({ accounts, onClose, onSaved }: {
           </button>
         </div>
         {wallets.length === 0 ? (
-          <p className="muted">ยังไม่มีบัญชีประเภท e-wallet เพิ่มได้ในหน้าตั้งค่า</p>
+          <p className="muted">ยังไม่มีบัญชีประเภท e-wallet หรือบัตรเครดิต เพิ่มได้ในหน้าตั้งค่า</p>
         ) : (
           <div className="toolbar">
             <label className="small">
