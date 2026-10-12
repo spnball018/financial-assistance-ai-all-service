@@ -90,6 +90,36 @@ docker compose --profile public up -d --build
 Caddy gets a Let's Encrypt certificate automatically (ports 80 and 443 must be open in the firewall).
 Everything else stays on `127.0.0.1`. Change `POSTGRES_PASSWORD` before the first start.
 
+### Home server (Cloudflare Tunnel)
+
+No router ports are opened and CGNAT does not matter; Cloudflare serves HTTPS. The domain's DNS must
+be on Cloudflare.
+
+1. Cloudflare Zero Trust > Networks > Tunnels > **Create a tunnel** (Cloudflared). Copy the token.
+   Add a public hostname, e.g. `pfa.panusian.com`, service `HTTP`, URL `web:80`.
+2. `./.env`:
+   ```
+   POSTGRES_PASSWORD=<long random>          # before the first start; it only applies to a new volume
+   CLOUDFLARE_TUNNEL_TOKEN=<token>
+   ```
+3. `expense-api/.env`: a fresh `SECRET_KEY` (keep a copy away from the backups), `AUTH_MODE=google`,
+   `ADMIN_EMAILS`, the Google OAuth client, and
+   ```
+   PUBLIC_BASE_URL=https://pfa.panusian.com
+   ALLOWED_HOSTS=localhost,127.0.0.1,expense-api,pfa.panusian.com
+   ```
+4. Google OAuth client: add JavaScript origin `https://pfa.panusian.com` and redirect URIs
+   `https://pfa.panusian.com/api/auth/callback` and `https://pfa.panusian.com/api/gmail/callback`.
+5. `docker compose --profile tunnel up -d --build`
+
+`db-backup` writes a `pg_dump -Fc` to `./data/backups` every 24 hours and keeps 14 days
+(`BACKUP_KEEP_DAYS`). Copy them off the machine; restore with
+`pg_restore -h localhost -U postgres -d financial --clean <file>`.
+
+Cloudflare closes a request after 100 seconds, so a long first sync shows an error in the browser
+even though it keeps running on the server. Run the first sync from `http://localhost:3000` on the
+server itself, or press Refresh again after a few minutes.
+
 ## Local development
 
 Postgres in Docker, everything else from local virtualenvs / Node (commands in [CLAUDE.md](CLAUDE.md)):

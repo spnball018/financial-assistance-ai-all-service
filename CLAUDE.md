@@ -25,6 +25,9 @@ docker compose --profile manual up --build gmail-auth
 docker compose up -d
 # Public server: also Caddy on :80/:443 with Let's Encrypt for DOMAIN (./.env)
 docker compose --profile public up -d
+# Home server: Cloudflare Tunnel instead of Caddy (CLOUDFLARE_TUNNEL_TOKEN in ./.env); both profiles
+# also start db-backup (nightly pg_dump to ./data/backups)
+docker compose --profile tunnel up -d
 
 # Run the LangGraph assistant (profile-gated; waits for the services above to be healthy)
 docker compose --profile chatbot run --rm chatbot    # interactive (stdin/tty)

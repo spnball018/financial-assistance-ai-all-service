@@ -10,7 +10,8 @@ volumes:
 services:
 
   # Every port is bound to 127.0.0.1. Only `caddy` (profile public) listens on the network: it serves
-  # the web UI over HTTPS, and the UI and API require Google sign-in or an API token.
+  # the web UI over HTTPS, and the UI and API require Google sign-in or an API token. On a home
+  # server, `cloudflared` (profile tunnel) replaces caddy and opens no ports at all.
   # Secrets come from ./.env (see .env.example) and ./expense-api/.env.
 
   # ── PostgreSQL ────────────────────────────────────────────────────────────
@@ -144,6 +145,56 @@ services:
       - web
     profiles:
       - public
+
+  # ── Public entry via Cloudflare Tunnel (docker compose --profile tunnel up -d) ─
+  # For a home server: no open router ports and no Let's Encrypt; Cloudflare terminates HTTPS. Create
+  # the tunnel in Cloudflare Zero Trust and route its public hostname (DOMAIN) to http://web:80.
+  # Use this or `caddy`, not both.
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: financial-ai-cloudflared
+    command: tunnel --no-autoupdate run
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN:?set CLOUDFLARE_TUNNEL_TOKEN in ./.env}
+    networks:
+      - financial-ai
+    restart: unless-stopped
+    depends_on:
+      - web
+    profiles:
+      - tunnel
+
+  # ── Nightly database backup (profiles public and tunnel) ──────────────────
+  # pg_dump once a day into ./data/backups, keeping BACKUP_KEEP_DAYS (default 14) days. A dump
+  # without expense-api/.env SECRET_KEY cannot decrypt Gmail tokens or KTC passwords; keep both, apart.
+  db-backup:
+    image: postgres:16-alpine
+    container_name: financial-ai-db-backup
+    environment:
+      - PGPASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - KEEP_DAYS=${BACKUP_KEEP_DAYS:-14}
+    volumes:
+      - ./data/backups:/backups
+    entrypoint:
+      - sh
+      - -c
+      - |
+        while true; do
+          f=/backups/financial-$$(date +%Y%m%d-%H%M).dump
+          pg_dump -h postgres -U postgres -Fc financial > "$$f.tmp" && mv "$$f.tmp" "$$f" && echo "backup $$f" \
+            || { rm -f "$$f.tmp"; echo "backup FAILED"; }
+          find /backups -name 'financial-*.dump' -mtime +$$KEEP_DAYS -delete
+          sleep 86400
+        done
+    networks:
+      - financial-ai
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles:
+      - public
+      - tunnel
 
   # ── One-shot OAuth helper (run manually when token.json is missing/expired) ─
   gmail-auth:
