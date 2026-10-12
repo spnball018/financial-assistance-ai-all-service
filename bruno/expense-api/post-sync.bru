@@ -1,0 +1,20 @@
+meta {
+  name: Run Sync
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{expenseApiUrl}}/sync
+  body: none
+  auth: none
+}
+
+docs {
+  ดึงอีเมลใหม่ของทุกแหล่งที่ `is_active` แล้ว parse เป็นรายการ `pending`
+  
+  **request แบบรอผล** รอบแรกใช้เวลาหลายนาที (ราว 2–3 นาทีต่อ 150 ฉบับ)
+  ให้ตั้ง timeout ใน Bruno Preferences ให้ยาวพอ (เช่น 0 = ไม่จำกัด)
+  
+  Errors: `409` มี sync อื่นกำลังรัน
+}

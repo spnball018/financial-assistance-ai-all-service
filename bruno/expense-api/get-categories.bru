@@ -1,0 +1,15 @@
+meta {
+  name: Get Categories
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{expenseApiUrl}}/categories
+  body: none
+  auth: none
+}
+
+docs {
+  หมวดหมู่แบบ flat เรียงให้หมวดแม่มาก่อนหมวดลูก UI สร้าง tree จาก `parent_id`
+}

@@ -1,0 +1,28 @@
+meta {
+  name: Update Email Source
+  type: http
+  seq: 4
+}
+
+put {
+  url: {{expenseApiUrl}}/email-sources/{{source}}
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "gmail_label": "financial-kasikorn",
+    "sender_filter": "KPLUS@kasikornbank.com",
+    "account_id": 1,
+    "is_active": true
+  }
+}
+
+docs {
+  แทนที่ค่าทั้งแถว (ไม่ใช่ partial update) ฟิลด์ที่ไม่ส่งจะกลายเป็น `null`
+  
+  `source`: `kbank_email | ktc_pdf | shopee_email | lazada_email` (ตั้งใน env var `source`)
+  
+  Errors: `404` ไม่มี source นี้ · `422` เปิดใช้โดยไม่มี `gmail_label`
+}

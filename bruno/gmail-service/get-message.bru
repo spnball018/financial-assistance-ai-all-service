@@ -1,0 +1,17 @@
+meta {
+  name: Get Message
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{gmailServiceUrl}}/api/messages/{{messageId}}
+  body: none
+  auth: none
+}
+
+docs {
+  ตั้ง env var `messageId` จาก `emails[].id` ของ List Emails
+  
+  `internal_date` เป็น epoch milliseconds ในรูป string
+}

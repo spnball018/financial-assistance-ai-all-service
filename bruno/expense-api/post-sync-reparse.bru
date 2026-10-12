@@ -1,0 +1,21 @@
+meta {
+  name: Reparse Source
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{expenseApiUrl}}/sync/reparse?source={{source}}
+  body: none
+  auth: none
+}
+
+params:query {
+  source: {{source}}
+}
+
+docs {
+  parse อีเมลใน `raw_emails` ของแหล่งนั้นใหม่ ไม่เรียก Gmail รันซ้ำได้ไม่ซ้ำข้อมูล (มี `dedup_key`)
+  
+  Errors: `404` ไม่มี parser สำหรับ source นี้
+}

@@ -1,0 +1,27 @@
+meta {
+  name: List Emails
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{gmailServiceUrl}}/api/emails?labels=financial-kasikorn&max_results=10
+  body: none
+  auth: none
+}
+
+params:query {
+  labels: financial-kasikorn
+  ~labels: financial-ktc
+  ~date_after: 2026/09/01
+  ~date_before: 2026/10/01
+  ~search_text: from:KPLUS@kasikornbank.com
+  max_results: 10
+  ~page_token: 
+}
+
+docs {
+  `labels` ส่งซ้ำได้ หลาย label = OR · วันที่เป็น `YYYY/MM/DD` · `max_results` 1–100
+  
+  ถ้ามี env `ALLOWED_LABELS` label ที่ไม่อยู่ในรายการจะได้ `400`
+}

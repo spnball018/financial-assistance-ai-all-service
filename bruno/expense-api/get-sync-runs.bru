@@ -1,0 +1,19 @@
+meta {
+  name: Get Sync Runs
+  type: http
+  seq: 7
+}
+
+get {
+  url: {{expenseApiUrl}}/sync/runs?limit=20
+  body: none
+  auth: none
+}
+
+params:query {
+  limit: 20
+}
+
+docs {
+  ประวัติ sync ล่าสุดก่อน (`limit` 1–100) · `status`: `running | success | failed`
+}

@@ -1,0 +1,19 @@
+meta {
+  name: Upload CSV Statement
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{statementServiceUrl}}/upload-statement/
+  body: multipartForm
+  auth: none
+}
+
+body:multipart-form {
+  file: @file()
+}
+
+docs {
+  เลือกไฟล์ CSV ที่มีคอลัมน์ `Date`, `Description`, `Amount` ในช่อง `file`
+}

@@ -1,0 +1,22 @@
+meta {
+  name: Parse KTC PDF
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{statementServiceUrl}}/parse-ktc-pdf
+  body: multipartForm
+  auth: none
+}
+
+body:multipart-form {
+  file: @file()
+  password: {{ktcPdfPassword}}
+}
+
+docs {
+  เลือก PDF ของ KTC (ไม่เกิน 10 MB) ในช่อง `file` และตั้ง secret env var `ktcPdfPassword`
+  
+  Errors: `401 wrong_password` · `413 file_too_large` · `422` อ่าน PDF ไม่ได้ / layout เปลี่ยน / ยอดไม่ตรง
+}

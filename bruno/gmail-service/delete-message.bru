@@ -1,0 +1,15 @@
+meta {
+  name: Trash Message
+  type: http
+  seq: 4
+}
+
+delete {
+  url: {{gmailServiceUrl}}/api/messages/{{messageId}}
+  body: none
+  auth: none
+}
+
+docs {
+  ย้ายไปถังขยะ (กู้คืนได้ใน 30 วัน) ไม่ใช่ลบถาวร
+}

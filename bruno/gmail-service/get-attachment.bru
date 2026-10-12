@@ -1,0 +1,16 @@
+meta {
+  name: Get Attachment
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{gmailServiceUrl}}/api/messages/{{messageId}}/attachments/{{attachmentId}}
+  body: none
+  auth: none
+}
+
+docs {
+  คืน bytes ของไฟล์แนบ (`application/octet-stream`)
+  ตั้ง env var `attachmentId` จาก `attachments[].attachment_id` ของ Get Message
+}
