@@ -6,6 +6,7 @@ from typing import Optional
 
 from sqlalchemy import text
 
+from parsers.marketplace import Order
 from sources.base import RawAttachment, RawEmail, TxnNode
 
 STALE_RUN_MINUTES = 30
@@ -173,3 +174,39 @@ def insert_tree(conn, node: TxnNode, *, user_id: int, account_id: int, source: s
                            parent_id=new_id)
         inserted, dups = inserted + i, dups + d
     return inserted, dups
+
+
+# ── marketplace orders ─────────────────────────────────────────────────────
+
+_UPSERT_ORDER = text("""
+INSERT INTO ledger.ecommerce_orders
+  (user_id, platform, order_id, ordered_at, total_amount, gmail_message_id, raw_email_id, raw)
+VALUES (:uid, :platform, :order_id, :ordered_at, :total, :gmail_message_id, :raw_email_id, CAST(:raw AS jsonb))
+ON CONFLICT (user_id, platform, order_id) DO UPDATE
+  SET ordered_at = EXCLUDED.ordered_at, raw = EXCLUDED.raw,
+      gmail_message_id = EXCLUDED.gmail_message_id, raw_email_id = EXCLUDED.raw_email_id
+  -- a later email with the exact order time replaces an estimate, while the order is still unmatched
+  WHERE ecommerce_orders.matched_txn_id IS NULL
+    AND NOT COALESCE((ecommerce_orders.raw->>'ordered_at_exact')::boolean, true)
+    AND (EXCLUDED.raw->>'ordered_at_exact')::boolean
+RETURNING id, (xmax = 0) AS inserted""")
+
+
+def upsert_order(conn, uid: int, order: Order, raw_email: RawEmail) -> tuple[int, int]:
+    """One ecommerce_orders row (+ its lines). Returns (inserted, duplicates). Seeing the same order in
+    another email (shipped, received, ...) is a duplicate."""
+    raw = {"ordered_at_exact": order.ordered_at_exact, "sellers": order.sellers,
+           "payment_method": order.payment_method, "rejected_txn_ids": [],
+           "lines": [{"kind": ln.kind, "name": ln.name, "quantity": ln.quantity, "amount": str(ln.amount),
+                      "variant": ln.variant} for ln in order.lines]}
+    row = conn.execute(_UPSERT_ORDER, {
+        "uid": uid, "platform": order.platform, "order_id": order.order_id, "ordered_at": order.ordered_at,
+        "total": order.total, "gmail_message_id": raw_email.gmail_message_id, "raw_email_id": raw_email.raw_email_id,
+        "raw": json.dumps(raw)}).first()
+    if row is None or not row.inserted:
+        return 0, 1
+    for ln in order.lines:
+        conn.execute(text("INSERT INTO ledger.ecommerce_order_items (order_pk, kind, name, quantity, amount) "
+                          "VALUES (:o, :k, :n, :q, :a)"),
+                     {"o": row.id, "k": ln.kind, "n": _clean(ln.name), "q": ln.quantity, "a": ln.amount})
+    return 1, 0

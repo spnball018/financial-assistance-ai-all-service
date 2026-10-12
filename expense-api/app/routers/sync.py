@@ -6,6 +6,7 @@ from app.db import get_engine
 from categorize.ai import classifier_from_env
 from categorize.service import categorize_pending
 from reconcile.card_payments import link_card_payments
+from reconcile.marketplace import adjustments_follow_items, link_orders
 from sync import engine as sync_engine
 from sync import repo
 from sync.gmail_client import MailClient
@@ -31,8 +32,16 @@ def run_sync(mail: MailClient = Depends(get_mail_client), uid: int = Depends(cur
     except sync_engine.SyncBusy:
         raise HTTPException(status_code=409, detail="A sync is already running")
     try:
+        # before categorizing, so the new order lines get categories in the same run
+        with get_engine().begin() as conn:
+            orders = link_orders(conn, uid)
+    except Exception as e:  # re-runnable via POST /reconcile
+        orders = {"error": type(e).__name__}
+    try:
         # built here, not as a dependency: a misconfigured categorizer must not block the sync
         categorized = categorize_pending(get_engine(), uid, classifier_from_env())
+        with get_engine().begin() as conn:
+            adjustments_follow_items(conn, uid)
     except Exception as e:  # the sync itself succeeded; categorizing can be re-run via POST /categorize
         categorized = {"error": type(e).__name__}
     try:
@@ -40,16 +49,24 @@ def run_sync(mail: MailClient = Depends(get_mail_client), uid: int = Depends(cur
             reconciled = link_card_payments(conn, uid)
     except Exception as e:  # same: re-runnable via POST /reconcile
         reconciled = {"error": type(e).__name__}
-    return {"run_id": result.run_id, "counts": result.counts, "categorize": categorized, "reconcile": reconciled}
+    return {"run_id": result.run_id, "counts": result.counts, "orders": orders, "categorize": categorized,
+            "reconcile": reconciled}
 
 
 @router.post("/reparse")
 def reparse(source: str, mail: MailClient = Depends(get_mail_client), uid: int = Depends(current_user_id)):
     """Re-run a source's parser over the stored raw emails (no Gmail listing)."""
     try:
-        return {"source": source, "counts": sync_engine.reparse(get_engine(), uid, mail, source)}
+        counts = sync_engine.reparse(get_engine(), uid, mail, source)
     except KeyError:
         raise HTTPException(status_code=404, detail=f"No parser registered for '{source}'")
+    with get_engine().begin() as conn:
+        orders = link_orders(conn, uid)
+    if orders["linked_orders"]:
+        categorize_pending(get_engine(), uid, classifier_from_env())
+        with get_engine().begin() as conn:
+            adjustments_follow_items(conn, uid)
+    return {"source": source, "counts": counts, "orders": orders}
 
 
 @router.get("/runs")

@@ -50,6 +50,8 @@ SELECT t.id, t.account_id, t.merchant_raw, t.description, t.amount, t.node_type,
 FROM ledger.transactions t
 WHERE t.user_id = :uid AND t.status = 'pending' AND t.kind = 'expense' AND t.category_source = 'none'
   AND NOT EXISTS (SELECT 1 FROM ledger.transactions c WHERE c.parent_id = t.id)
+  -- shipping/discount lines of a marketplace order take their items' category (reconcile/marketplace.py)
+  AND NOT (t.node_type = 'adjustment' AND t.source IN ('shopee_email', 'lazada_email'))
 ORDER BY t.id""")
 
 _SET = text("""

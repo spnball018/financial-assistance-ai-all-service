@@ -4,6 +4,6 @@ Adding a source = add sources/<name>.py following sources/base.py and register i
 """
 from types import ModuleType
 
-from sources import kbank, ktc
+from sources import kbank, ktc, lazada, shopee
 
-REGISTRY: dict[str, ModuleType] = {m.SOURCE: m for m in (kbank, ktc)}
+REGISTRY: dict[str, ModuleType] = {m.SOURCE: m for m in (kbank, ktc, lazada, shopee)}

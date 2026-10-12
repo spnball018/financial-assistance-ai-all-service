@@ -8,11 +8,14 @@ Each source module must expose:
     SOURCE: str            # matches ledger.email_sources.source, e.g. "ktc_pdf"
     PARSER_VERSION: str    # stored in raw_emails.parser_version; bump when output changes
     def parse(email: RawEmail, ctx: ParseContext) -> ParseResult
+A result carries transaction trees (`nodes`) or marketplace orders (`orders`).
 """
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
 from typing import Callable, Literal, Optional
+
+from parsers.marketplace import Order
 
 NodeType = Literal["payment", "statement", "statement_line", "order", "order_item", "adjustment"]
 Kind = Literal["expense", "income", "transfer"]
@@ -66,4 +69,7 @@ class TxnNode:
 class ParseResult:
     status: Literal["parsed", "skipped", "failed"]
     nodes: list[TxnNode] = field(default_factory=list)  # roots only
+    # marketplace orders go to ledger.ecommerce_orders, not transactions: the money left through a bank
+    # or card payment, which reconcile/marketplace.py splits into the order's lines
+    orders: list[Order] = field(default_factory=list)
     error: Optional[str] = None  # never include passwords or PDF content

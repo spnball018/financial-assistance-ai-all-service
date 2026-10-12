@@ -68,8 +68,12 @@ def _parse_one(engine: Engine, mail: MailClient, uid: int, source: str, account_
             result = module.parse(email, ParseContext(account_id=account_id, get_attachment=get_attachment,
                                                       get_setting=lambda key: secrets.get_setting(uid, key)))
             if result.status == "parsed":
-                if account_id is None:
+                if result.nodes and account_id is None:
                     raise RuntimeError(f"source {source} has no account_id")
+                for order in result.orders:
+                    i, d = repo.upsert_order(conn, uid, order, email)
+                    c.new += i
+                    c.duplicate += d
                 for node in result.nodes:
                     i, d = repo.insert_tree(conn, node, user_id=uid, account_id=account_id, source=source, raw_email=email)
                     c.new += i

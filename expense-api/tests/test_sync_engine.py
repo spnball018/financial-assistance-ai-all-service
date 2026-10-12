@@ -87,12 +87,13 @@ def test_stale_running_sync_does_not_block(db):
     assert scalar(db, "SELECT count(*) FROM ledger.sync_runs WHERE status='failed'") == 1
 
 
-def test_active_source_without_parser_is_reported_not_fatal(db):
+def test_active_source_without_parser_is_reported_not_fatal(db, monkeypatch):
+    monkeypatch.delitem(sync_engine.REGISTRY, "lazada_email")
     with db.begin() as conn:
         conn.execute(text("UPDATE ledger.email_sources SET is_active=true, gmail_label='x' "
-                          "WHERE source='shopee_email'"))
+                          "WHERE source='lazada_email'"))
     res = sync_engine.run_sync(db, 1, FakeMailClient(kbank_messages()))
-    assert res.counts["shopee_email"]["error"] == "no parser registered"
+    assert res.counts["lazada_email"]["error"] == "no parser registered"
     assert res.counts["kbank_email"]["new"] == 2
     assert scalar(db, "SELECT status FROM ledger.sync_runs") == "success"
 
