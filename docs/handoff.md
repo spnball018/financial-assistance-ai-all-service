@@ -23,7 +23,7 @@ git บนเครื่อง dev แก้แล้ว: merge `origin/main` (
 - เริ่มด้วย DB ใหม่ (ไม่ได้ย้ายข้อมูลจากเครื่อง dev)
 - ตั้งค่าบน server (ไม่อยู่ใน git):
   - `./.env`: `POSTGRES_PASSWORD` (สุ่มใหม่), `CLOUDFLARE_TUNNEL_TOKEN` (ต้องขึ้นต้นด้วย `eyJ` ไม่มีเครื่องหมายคำพูด)
-  - `expense-api/.env`: `SECRET_KEY` ใหม่, `AUTH_MODE=google`, `ADMIN_EMAILS` (มี `spnball@gmail.com`), `PUBLIC_BASE_URL=https://pfa.panusian.com` (**ต้อง https** ไม่งั้น Google ตอบ redirect_uri_mismatch), `ALLOWED_HOSTS=localhost,127.0.0.1,expense-api,pfa.panusian.com` (ไม่งั้น 400 Invalid host header), `SYNC_FIRST_RUN_DAYS=180` (ผู้ใช้อยากได้ 6 เดือน), Gemini และ Google OAuth client เดียวกับเครื่อง dev
+  - `expense-api/.env`: `SECRET_KEY` ใหม่, `AUTH_MODE=google`, `ADMIN_EMAILS` (มี `spnball@gmail.com`), `PUBLIC_BASE_URL=https://pfa.panusian.com` (**ต้อง https** ไม่งั้น Google ตอบ redirect_uri_mismatch), `ALLOWED_HOSTS=localhost,127.0.0.1,expense-api,pfa.panusian.com` (ไม่งั้น 400 Invalid host header), `SYNC_FIRST_RUN_DAYS=180` (ผู้ใช้อยากได้ 6 เดือน), **`GEMINI_API_KEY`** (ไม่มีแล้วจะไม่ error แต่ AI ไม่จัดหมวดเลย และอ่านรูปใบเสร็จ/wallet ได้ 503 · production เคยขาดค่านี้ 2026-10-12), Google OAuth client อ่านจาก `credentials.json` (ไม่ต้องใส่ใน `.env`)
   - `credentials.json`, `gmail-service/token.json` (ต้องมีไฟล์ ไม่งั้น docker สร้างเป็น directory แทน)
 - Google OAuth client `178410589198-go5e846...` (ชื่อ "Personal Financial") มี redirect URI ของ localhost และต้องมี `https://pfa.panusian.com/api/auth/callback` กับ `/api/gmail/callback`
 - แก้ env แล้วต้อง `up -d --force-recreate <service>` (`restart` ไม่อ่าน `.env` ใหม่)
