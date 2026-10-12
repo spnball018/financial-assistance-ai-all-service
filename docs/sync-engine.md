@@ -29,7 +29,7 @@ MailClient   SourceParser   Repo
    ▼            ▼
 GmailServiceClient     sources/kbank.py ─→ parsers/kbank.py
 FakeMailClient (test)  sources/ktc.py   ─→ credit-card-statement-service  (KTC track)
-                       sources/shopee.py, lazada.py (T1.3)
+                       sources/shopee.py, lazada.py ─→ parsers/marketplace.py (orders → ecommerce_orders)
 ```
 
 - **`MailClient`** (`sync/gmail_client.py`): Protocol ที่มี `list_ids(query, page_token)`, `get_message(id)` และ `get_attachment(id, att_id)`
@@ -37,6 +37,7 @@ FakeMailClient (test)  sources/ktc.py   ─→ credit-card-statement-service  (K
   - `FakeMailClient` สำหรับเทสต์ อ่านจาก fixture JSON
   - ถ้าเปลี่ยนแหล่งอีเมล (IMAP, Gmail API ตรง) แก้แค่ชั้นนี้
 - **`SourceParser`**: ไฟล์ละแหล่งใน `sources/` ตาม `sources/base.py`
+  - ผลการ parse เป็นต้นไม้ของรายการ (`nodes`) หรือ order ของ marketplace (`orders`) อย่างหลัง repo เก็บใน `ecommerce_orders` แล้ว `reconcile/marketplace.py` เอาไปแยกรายการจ่ายภายหลัง
   - `sources/__init__.py` มี registry `{"kbank_email": kbank, "ktc_pdf": ktc, ...}` เพิ่มแหล่งใหม่โดยไม่ต้องแก้ engine
   - `parsers/` แกะข้อความล้วนๆ ส่วน `sources/` แปลงเป็น `TxnNode` ตามกติกาบัญชี (node_type, kind, dedup_key) กติกาบัญชีอยู่ที่เดียว และเทสต์ parser ไม่ต้องรู้จัก ledger
   - parser ห้ามแตะ DB

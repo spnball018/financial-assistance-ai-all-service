@@ -186,8 +186,8 @@ Response `200`
 | ฟิลด์ใน counts | ความหมาย |
 |---|---|
 | `fetched` | อีเมลใหม่ที่บันทึกลง `raw_emails` รอบนี้ |
-| `new` | แถวใน `transactions` ที่สร้างใหม่ (นับทุก node ในต้นไม้) |
-| `duplicate` | node ที่มี `dedup_key` อยู่แล้ว |
+| `new` | แถวใน `transactions` ที่สร้างใหม่ (นับทุก node ในต้นไม้) หรือ order ใหม่ใน `ecommerce_orders` (Shopee/Lazada) |
+| `duplicate` | node ที่มี `dedup_key` อยู่แล้ว หรือ order ที่เคยเห็นจากอีเมลฉบับอื่นแล้ว |
 | `skipped` | อีเมลที่ parser ตั้งใจข้าม (เช่น Top-up, รายการ Failure) |
 | `failed` | อีเมลที่ดึงหรือ parse ไม่สำเร็จ จะถูกลองใหม่ในรอบถัดไป |
 | `error` | มีเฉพาะเมื่อทั้งแหล่งล้ม เช่น `"no parser registered"` หรือ `"gmail: ..."` |
@@ -198,15 +198,17 @@ Errors: `409` มี sync อื่นกำลังรัน (sync ที่�
 
 - แหล่งที่ยังไม่เคยมีอีเมลในระบบ (เช่น เพิ่งเปิด) ดึงย้อนหลัง 90 วันของตัวเอง ไม่ได้ใช้ช่วงเวลาของแหล่งอื่น
 
-หลัง sync เสร็จจะจัดหมวดอัตโนมัติ (เหมือนเรียก `POST /categorize`) และจับคู่การจ่ายบิลบัตร (เหมือน `POST /reconcile`) ผลอยู่ใน key `categorize` และ `reconcile` ของ response ถ้าการจัดหมวดล้ม sync ยังถือว่าสำเร็จ และ key นี้จะเป็น `{"error": "<ชื่อ exception>"}`
+หลัง sync เสร็จจะจับคู่ order ของ Shopee/Lazada กับรายการจ่าย (key `orders`, ดู `POST /reconcile`) แล้วจัดหมวดอัตโนมัติ (เหมือนเรียก `POST /categorize`) และจับคู่การจ่ายบิลบัตร (เหมือน `POST /reconcile`) ผลอยู่ใน key `orders`, `categorize` และ `reconcile` ของ response ถ้าการจัดหมวดล้ม sync ยังถือว่าสำเร็จ และ key นี้จะเป็น `{"error": "<ชื่อ exception>"}`
 
 #### ✅ `POST /sync/reparse?source={source}`
 parse อีเมลทุกฉบับของแหล่งนั้นที่เก็บใน `raw_emails` ใหม่ ไม่เรียก Gmail ใช้ตอนแก้หรือเพิ่ม parser รันซ้ำได้ไม่ซ้ำข้อมูล เพราะมี `dedup_key`
 
 Response `200`
 ```json
-{"source": "kbank_email", "counts": {"fetched": 0, "new": 0, "duplicate": 152, "skipped": 0, "failed": 0}}
+{"source": "kbank_email", "counts": {"fetched": 0, "new": 0, "duplicate": 152, "skipped": 0, "failed": 0},
+ "orders": {"linked_orders": 0, "linked_payments": 0, "ambiguous": 0}}
 ```
+หลัง parse จะจับคู่ order อีกครั้ง และถ้าจับคู่ได้ใหม่จะจัดหมวดรายการที่เพิ่งสร้าง
 Errors: `404` ไม่มี parser สำหรับ source นี้
 
 #### ✅ `GET /sync/runs?limit=20`
@@ -289,15 +291,25 @@ Errors: `409` รูปเดิมซ้ำ (เทียบ sha256) · `422` �
 #### ✅ `DELETE /transactions/{id}/receipt-items`
 ยกเลิกการแยก (ลบลูกที่มาจากใบเสร็จ รูปยังอยู่) ใช้ได้เฉพาะรายการ `pending` → `{"removed": 5}`
 
-### จับคู่รายการ (T2.2, T6.7)
+### จับคู่รายการ (T2.1, T2.2, T6.7)
 
 #### ✅ `POST /reconcile`
+**order ของ Shopee/Lazada (T2.1, key `orders`)**: order ใน `ecommerce_orders` ที่ยังไม่จับคู่ จับกับรายการจ่าย root ที่ `pending`, `kind = expense`, ยังไม่มีลูก, ชื่อผู้รับเข้ากับแพลตฟอร์ม (Shopee: `shopee|ช้อปปี้`, Lazada: `lazada|ลาซาด้า`) ยอดเท่ากันพอดี และจ่ายช่วง 5 นาทีก่อนถึง 24 ชั่วโมงหลังเวลาสั่ง (ถ้าเวลาสั่งเป็นค่าประมาณจากอีเมลจัดส่งของ Lazada ใช้ช่วง 14 วันก่อนอีเมล)
+- order ที่สั่งพร้อมกัน (Shopee แยก order ต่อร้านแต่จ่ายครั้งเดียว) รวมยอดตามเวลาสั่งก่อน ถ้าไม่ตรงค่อยลองทีละ order
+- ตรงหลายรายการ หรือรายการเดียวถูกหลายกลุ่มอ้าง → ไม่จับคู่ นับใน `ambiguous`
+- จับคู่แล้วสร้างลูกใต้รายการจ่าย สถานะ `pending` รอผู้ใช้ยืนยัน: `order` (ต่อ order) → `order_item` + `adjustment` (ค่าส่ง, ส่วนลด, ส่วนต่างที่อีเมลไม่ได้แจ้ง) บรรทัด `adjustment` ไม่ผ่านตัวจัดหมวดและไม่สอน Merchant Memory แต่ได้หมวดของสินค้าที่แพงสุดใน order
+
 จับคู่การจ่ายบิลบัตร KTC (รันอัตโนมัติหลัง `POST /sync` ด้วย) แก้เฉพาะรายการ root ที่ `pending` และ `category_source` เป็น `none`/`ai`
 1. จ่ายบิล KBank ให้ `KRUNGTHAI CARD PUBLIC COMPANY LIMITED` → โอนเข้าบัญชีบัตร KTC
 2. บรรทัดชำระเงินในบิล KTC (เช่น `Payment-KTB Internet`) ตรงกับรายการออกจากบัญชีอื่น **รายการเดียว** ยอดเท่ากัน ช่วง 3 วันก่อนถึง 1 วันหลังวันที่ลงบัญชี → โอนเข้าบัตร KTC (`category_source = account`, `ref_transaction_id` = statement) ถ้าตรงหลายรายการจะไม่เดา
 ```json
-{"card_payments": {"bill_payments": 0, "matched_by_amount": 1, "ambiguous": 0}}
+{"orders": {"linked_orders": 2, "linked_payments": 1, "ambiguous": 0},
+ "card_payments": {"bill_payments": 0, "matched_by_amount": 1, "ambiguous": 0}}
 ```
+
+#### ✅ `DELETE /reconcile/orders/{payment_id}`
+ยกเลิกการจับคู่ order กับรายการจ่ายที่ยัง `pending`: ลบลูก `order` (และสินค้าใต้มัน) และจำไว้ใน `ecommerce_orders.raw.rejected_txn_ids` ว่าไม่ต้องจับคู่กับรายการนี้อีก
+Response `200`: `{"removed": 2}` · `404` ไม่มีรายการ · `422` รายการยืนยันแล้ว
 
 #### ✅ `GET /reconcile/transfer-matches`
 รายรับ (`kind=income`) ที่น่าจะซ้ำกับการโอนเข้าบัญชีเดียวกันที่มีอยู่แล้ว (ยอดเท่ากัน ห่างไม่เกิน 2 วัน)
@@ -308,6 +320,36 @@ Errors: `409` รูปเดิมซ้ำ (เทียบ sha256) · `422` �
 
 #### ✅ `POST /reconcile/transfer-matches`
 `{"income_id": 201, "transfer_id": 150}` → ตั้งรายรับนั้นเป็น `ignored` และผูก `ref_transaction_id` กับการโอน (การโอนย้ายยอดให้ทั้งสองบัญชีแล้ว) · `422` ถ้าไม่ใช่คู่ที่ตรงกัน · `404`
+
+### รูปหน้าจอ e-wallet (TrueMoney ฯลฯ)
+
+wallet เป็นบัญชีที่มีรายการของตัวเอง แบบเดียวกับบัตร KTC แต่ข้อมูลมาจากรูปหน้าจอประวัติรายการในแอป อ่านด้วย Gemini vision (ตั้งค่าเดียวกับใบเสร็จ ไม่มี key ได้ `503`) รูปเก็บใน `RECEIPTS_DIR` เหมือนใบเสร็จ
+
+#### ✅ `POST /wallets/{account_id}/screenshots` (multipart `file`) → 201
+อัปโหลดแล้วอ่านทันที ยังไม่บันทึกรายการ บัญชีต้องเป็น `ewallet` (`422`), รูปเดิมซ้ำได้ `409`
+```json
+{"id": 3, "account_id": 10, "ocr_status": "done", "applied_at": null,
+ "ocr_result": {"balance": 310.0, "entries": [
+   {"occurred_at": "2026-09-05 14:12", "title": "7-Eleven", "amount": 89.0, "direction": "out", "kind": "payment"},
+   {"occurred_at": "2026-09-05 14:10", "title": "เติมเงิน", "amount": 1200.0, "direction": "in", "kind": "top_up"}]}}
+```
+`kind`: `payment | top_up | transfer_out | transfer_in | refund | cashback | other` · `occurred_at` เวลาไทย ปี ค.ศ.
+- `date_shown: false`: แถวที่อยู่เหนือหัววันที่แรกบนจอ วันที่เป็นการเดา (มักอยู่ในรูปก่อนหน้า)
+- `uncertain: true`: แสงสะท้อนหรือขอบจอบังตัวเลขยอด/เวลาบางส่วน ให้ผู้ใช้ตรวจ
+- อ่านได้ทั้งภาพหน้าจอและภาพถ่ายหน้าจอโทรศัพท์ (ทดสอบกับภาพถ่ายแอป TrueMoney 4 รูป: 2026-10-12)
+
+#### ✅ `GET /wallets/{account_id}/screenshots` · `GET /wallet-screenshots/{id}` · `GET /wallet-screenshots/{id}/image` · `POST /wallet-screenshots/{id}/read`
+
+#### ✅ `POST /wallet-screenshots/{id}/apply`
+Body `{"entries": [...]}` (รายการที่ผู้ใช้แก้แล้ว ใช้ตามนั้น) หรือ `{}` ใช้ผลที่อ่านได้ โดยข้ามแถว `date_shown: false` และแถวยอด 0 รันซ้ำได้
+- เงินออก → รายจ่าย `pending` บนบัญชี wallet, เงินเข้า (คืนเงิน, เงินคืน, รับโอน) → รายรับ `pending` · `source = wallet_screenshot`, `raw.screenshot_id` · `dedup_key = wallet:<account>:<นาที>:<ยอด>:<ทิศ>` รูปที่ช่วงเวลาซ้อนกันจึงไม่ซ้ำ
+- `top_up` ไม่สร้างแถวเอง แต่หารายการธนาคาร root ที่ชื่อผู้รับเข้ากับ wallet (TrueMoney: `true ?money`) ยอดเท่ากัน ห่างไม่เกิน 10 นาที ถ้าเจอรายการเดียวที่ยัง pending และผู้ใช้ไม่ได้เลือกหมวดเอง (`category_source` none/ai/memory: หมวดจากกฎอัตโนมัติถือเป็นการเดา) → เปลี่ยนเป็นโอนเข้า wallet (`category_source = account`)
+- หลังบันทึกจะจัดหมวดอัตโนมัติ (key `categorize`)
+```json
+{"new": 2, "duplicate": 0, "top_ups": [{"occurred_at": "2026-09-05T07:10:00Z", "amount": 1200.0,
+  "status": "linked", "transaction_id": 100}], "categorize": {"memory": 0, "ai": 1}}
+```
+`status` ของ top-up: `linked | already | not_found | ambiguous | confirmed` (`confirmed` = รายการธนาคารที่ผู้ใช้ตัดสินใจแล้ว ไม่แตะ)
 
 ### กฎต่อผู้รับ (Merchant Memory)
 
@@ -370,6 +412,16 @@ Response `{"is_set": true, "updated_at": "2026-10-05T07:00:00+00:00"}`
 #### ✅ `GET /transactions/{id}`
 รายการเดียว (ไม่มี `children`) · `404` ถ้าไม่มี
 
+#### ✅ `GET /transactions/{id}/details`
+สำหรับแผงรายละเอียดในหน้าเว็บ: ฟิลด์เดียวกับ `GET /transactions/{id}` บวก
+- `raw` (สิ่งที่ parser อ่านจากอีเมล เช่น `from_account`, `to_account`, `fee`, `balance_after`), `account_name`, `counter_account_name`, `category_th`, `source_ref`, `dedup_key`
+- `ancestors`: รายการแม่จากบนลงล่าง `[{id, node_type, amount, merchant_raw, description}]`
+- `email`: อีเมลที่รายการนี้มาจาก (หรือของรายการแม่ที่ใกล้สุด) `{id, source, subject, sender, received_at, has_html}` หรือ `null`
+- `orders`: order ของ Shopee/Lazada ที่จับคู่กับรายการนี้ `[{platform, order_id, ordered_at, total_amount, sellers, payment_method}]`
+
+#### ✅ `GET /transactions/{id}/email`
+เนื้ออีเมลต้นฉบับเป็น `text/html` (อีเมลที่มีแต่ข้อความถูก escape ใส่ `<pre>`) พร้อม `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox` · หน้าเว็บดึงเป็นข้อความแล้วแสดงใน `<iframe sandbox srcdoc>` (nginx ห้าม frame ด้วย `X-Frame-Options`) · `404` ถ้าไม่มีอีเมล
+
 #### ✅ `PATCH /transactions/{id}`
 แก้เฉพาะฟิลด์ที่ส่งมา
 ```json
@@ -427,11 +479,21 @@ Response `201`: รายการที่สร้าง · `422` ยอดไ
 - หมวดหลักเรียงตามยอดมากไปน้อย หมวดที่ไม่มีหมวดย่อย (เช่น บริจาค, Uncategorized) จะมี `subcategories` ว่าง
 - `pending_not_counted`: จำนวนรายการ root ที่ยัง pending ในเดือนนั้น (ยังไม่นับในยอด)
 - `income`: รายรับที่ confirm แล้ว แยกตามหมวด (`{"total": 8000.0, "categories": [{"category_id": 31, "name_th": "ค่าเช่า", "name_en": "Rental Income", "count": 1, "amount": 8000.0}]}`) และ `net` = รายรับ − รายจ่าย
+- กดหมวดในหน้าสรุปเพื่อดูรายการ: `GET /reports/expenses`
 - `transfers_out`: ยอดที่ confirm แล้วว่าโอนเข้าบัญชีตัวเอง แยกตามบัญชีปลายทาง แสดงให้เห็นว่าเงินไปไหน แต่ไม่รวมใน `total`
   ```json
   "transfers_out": [{"account_id": 10, "name": "TrueMoney", "count": 2, "amount": 1800.0}]
   ```
 
+
+#### ✅ `GET /reports/expenses?month=YYYY-MM&category_id={id}`
+รายการที่อยู่เบื้องหลังหมวดหนึ่งในสรุป (ถ้าเป็นหมวดหลักรวมหมวดย่อยด้วย) จาก `v_reportable_expenses` เรียงตามยอดมากไปน้อย
+```json
+[{"id": 211, "occurred_at": "2026-09-09T13:40:36Z", "has_time": true, "amount": 307.0, "merchant_raw": "TOPSUN เก้าอี้...",
+  "description": "โซฟา 90 ซม.-แดง · Shopee camppao", "node_type": "order_item", "category_id": 12,
+  "category_th": "งานอดิเรก/เครื่องเขียน", "account_name": "KBank ใช้จ่าย", "path": ["SHOPEEPAY", "Shopee · camppao"]}]
+```
+`path`: รายการแม่ (สูงสุด 2 ชั้น) ที่รายการนี้แยกออกมา · `422` เดือนผิดรูปแบบ
 ---
 
 ## gmail-service (`localhost:8000`)
