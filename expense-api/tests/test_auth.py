@@ -248,8 +248,19 @@ def test_auth_off_acts_as_user_1_on_localhost_only(api, monkeypatch):
 
 def test_unconfigured_google_client_fails_closed(api, monkeypatch):
     monkeypatch.delenv("GOOGLE_OAUTH_CLIENT_ID")
+    monkeypatch.setenv("GOOGLE_OAUTH_CREDENTIALS_FILE", "/nonexistent/credentials.json")
     res = api.get("/auth/login", follow_redirects=False)
     assert res.headers["location"].endswith("login_error=config")
+
+
+def test_client_read_from_credentials_json(api, monkeypatch, tmp_path):
+    creds = tmp_path / "credentials.json"
+    creds.write_text('{"web": {"client_id": "file-cid.apps.googleusercontent.com", "client_secret": "s"}}')
+    monkeypatch.delenv("GOOGLE_OAUTH_CLIENT_ID")
+    monkeypatch.delenv("GOOGLE_OAUTH_CLIENT_SECRET")
+    monkeypatch.setenv("GOOGLE_OAUTH_CREDENTIALS_FILE", str(creds))
+    res = api.get("/auth/login", follow_redirects=False)
+    assert "client_id=file-cid.apps.googleusercontent.com" in res.headers["location"]
 
 
 # ── one consent for sign-in and Gmail ─────────────────────────────────────

@@ -5,8 +5,10 @@ browser). One "Web application" client serves two flows:
 """
 import base64
 import hashlib
+import json
 import os
 import secrets
+from pathlib import Path
 from typing import Optional
 from urllib.parse import urlencode
 
@@ -26,18 +28,34 @@ class InvalidGrant(OAuthError):
     """The refresh token was revoked or expired (Testing-mode apps: after 7 days); reconnect."""
 
 
-def client_id() -> str:
-    value = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "").strip()
+# the repo-root credentials.json that gmail-service also reads; Docker mounts it and sets the path
+_CREDENTIALS_FILE = Path(__file__).resolve().parents[2] / "credentials.json"
+
+
+def _from_credentials_file(key: str) -> str:
+    path = Path(os.environ.get("GOOGLE_OAUTH_CREDENTIALS_FILE") or _CREDENTIALS_FILE)
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return ""
+    client = data.get("web") or data.get("installed") or {}
+    return str(client.get(key, "")).strip()
+
+
+def _setting(env: str, key: str) -> str:
+    """The env var when set, otherwise credentials.json, so a rotated secret is changed in one file."""
+    value = os.environ.get(env, "").strip() or _from_credentials_file(key)
     if not value:
-        raise OAuthError("GOOGLE_OAUTH_CLIENT_ID is not set")
+        raise OAuthError(f"{env} is not set and credentials.json has no {key}")
     return value
+
+
+def client_id() -> str:
+    return _setting("GOOGLE_OAUTH_CLIENT_ID", "client_id")
 
 
 def _client_secret() -> str:
-    value = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "").strip()
-    if not value:
-        raise OAuthError("GOOGLE_OAUTH_CLIENT_SECRET is not set")
-    return value
+    return _setting("GOOGLE_OAUTH_CLIENT_SECRET", "client_secret")
 
 
 def new_pkce() -> tuple[str, str]:
