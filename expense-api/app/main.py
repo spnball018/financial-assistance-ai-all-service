@@ -11,7 +11,8 @@ from sqlalchemy.exc import IntegrityError
 
 from app.auth import current_user_id, require_user
 from app.db import get_engine
-from app.routers import accounts, auth, categorize, gmail, ktc, receipts, reconcile, rules, sync, transactions, users
+from app.routers import (accounts, auth, categorize, gmail, ktc, receipts, reconcile, rules, sync, transactions, users,
+                         wallets)
 
 # Swagger is mounted below behind require_user, like everything else
 app = FastAPI(
@@ -101,6 +102,6 @@ def update_email_source(source: str, body: EmailSourceUpdate, uid: int = Depends
     return dict(row._mapping)
 
 
-for r in (accounts, ktc, gmail, sync, categorize, transactions, rules, receipts, reconcile, users):
+for r in (accounts, ktc, gmail, sync, categorize, transactions, rules, receipts, reconcile, users, wallets):
     protected.include_router(r.router)
 app.include_router(protected)

@@ -44,7 +44,7 @@ erDiagram
         char currency
         timestamptz occurred_at
         bool has_time
-        text source "kbank_email | ktc_pdf | shopee_email | lazada_email | manual"
+        text source "kbank_email | ktc_pdf | shopee_email | lazada_email | wallet_screenshot | manual"
         text source_ref
         text dedup_key "UK ต่อผู้ใช้"
         text gmail_message_id
@@ -152,6 +152,21 @@ erDiagram
         timestamptz applied_at
     }
 
+    wallet_screenshots {
+        int user_id FK "เจ้าของข้อมูล"
+        bigint id PK
+        int account_id FK "บัญชี e-wallet (TrueMoney ฯลฯ)"
+        text storage_uri "path ของไฟล์ใน RECEIPTS_DIR"
+        text mime_type
+        text sha256 "UK ต่อผู้ใช้"
+        timestamptz uploaded_at
+        text ocr_status "pending | done | failed"
+        jsonb ocr_result "entries ที่อ่านได้ + ยอดคงเหลือ"
+        text ocr_model
+        text ocr_error
+        timestamptz applied_at
+    }
+
     sync_runs {
         int user_id FK "เจ้าของข้อมูล"
         int id PK
@@ -230,6 +245,8 @@ erDiagram
     transactions |o--o{ receipts : "transaction_id"
     receipts |o--o{ transactions : "receipt_id"
     email_sources ||..o{ raw_emails : "source (ตรรกะ ไม่มี FK)"
+    accounts ||--o{ wallet_screenshots : "account_id"
+    wallet_screenshots ||..o{ transactions : "raw.screenshot_id (ตรรกะ ไม่มี FK)"
     users ||--o{ accounts : "user_id (และทุกตารางข้อมูล)"
     users ||--o{ auth_sessions : "user_id"
     users ||--o| gmail_connections : "user_id"
@@ -244,8 +261,9 @@ erDiagram
 | ledger | `transactions` | ทุกรายการ เก็บเป็นต้นไม้ในตารางเดียว |
 | การเรียนรู้ | `merchant_memory` | กฎต่อผู้รับที่ผู้ใช้เคยยืนยัน: หมวด / โอนเข้าบัญชีตัวเอง / ไม่ต้องจำ |
 | ข้อมูลดิบ | `email_sources`, `raw_emails`, `raw_attachments`, `sync_runs` | label ต่อแหล่ง อีเมล/ไฟล์ต้นฉบับ และประวัติ sync |
-| รอจับคู่ | `ecommerce_orders`, `ecommerce_order_items` | order ของ Shopee/Lazada ก่อนผูกกับรายการจ่าย (ยังไม่ได้ใช้ รอ T1.3) |
+| รอจับคู่ | `ecommerce_orders`, `ecommerce_order_items` | order ของ Shopee/Lazada จากอีเมล `matched_txn_id` ชี้รายการจ่ายที่แยกเป็น order แล้ว |
 | ใบเสร็จ | `receipts` | รูปใบเสร็จและผลที่อ่านได้ ลูกที่แยกออกมาชี้กลับด้วย `transactions.receipt_id` |
+| รูปหน้าจอ wallet | `wallet_screenshots` | รูปประวัติรายการจากแอป e-wallet และผลที่อ่านได้ รายการที่บันทึกมี `source = wallet_screenshot` และ `raw.screenshot_id` |
 | ความลับ | `settings` | ค่าที่เข้ารหัส เช่น รหัส PDF ของ KTC |
 | ผู้ใช้ | `users`, `auth_sessions`, `api_tokens`, `gmail_connections` | ผู้ใช้ (admin/member), session จาก Google sign-in และ API token เก็บแค่ sha256 ของความลับ, Gmail ของแต่ละคน (refresh token เข้ารหัส) |
 
