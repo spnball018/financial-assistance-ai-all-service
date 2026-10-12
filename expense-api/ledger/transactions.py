@@ -276,3 +276,57 @@ def create_manual(conn, uid: int, *, account_id: int, amount: Decimal, occurred_
     if kind == "expense" and key and category_id != _uncategorized_id(conn) and not memory.is_ask(conn, uid, key):
         memory.remember(conn, uid, key, category_id)
     return get_one(conn, uid, new_id)
+
+
+def _email_id(conn, uid: int, txn_id: int) -> Optional[int]:
+    """The email a row came from; rows made later (order lines, receipt items) use their nearest ancestor's."""
+    return conn.execute(text("""
+        WITH RECURSIVE up AS (
+          SELECT id, parent_id, raw_email_id, 0 AS d FROM ledger.transactions WHERE id = :id AND user_id = :uid
+          UNION ALL SELECT p.id, p.parent_id, p.raw_email_id, up.d + 1 FROM ledger.transactions p JOIN up ON p.id = up.parent_id)
+        SELECT raw_email_id FROM up WHERE raw_email_id IS NOT NULL ORDER BY d LIMIT 1"""),
+        {"id": txn_id, "uid": uid}).scalar()
+
+
+def details(conn, uid: int, txn_id: int) -> dict:
+    """Everything known about one row, for the detail panel: the row, what the parser read from the
+    email (`raw`), its accounts, the rows above it, the source email and a matched marketplace order."""
+    t = get_one(conn, uid, txn_id)
+    extra = conn.execute(text("""
+        SELECT t.raw, a.name AS account_name, ca.name AS counter_account_name, k.name_th AS category_th,
+               t.source_ref, t.dedup_key
+        FROM ledger.transactions t JOIN ledger.accounts a ON a.id = t.account_id
+        LEFT JOIN ledger.accounts ca ON ca.id = t.counter_account_id
+        LEFT JOIN ledger.categories k ON k.id = t.category_id
+        WHERE t.id = :id"""), {"id": txn_id}).one()
+    t.update(extra._mapping)
+    t["ancestors"] = [dict(r._mapping) for r in conn.execute(text("""
+        WITH RECURSIVE up AS (
+          SELECT parent_id, 0 AS d FROM ledger.transactions WHERE id = :id AND user_id = :uid
+          UNION ALL SELECT p.parent_id, up.d + 1 FROM ledger.transactions p JOIN up ON p.id = up.parent_id)
+        SELECT t.id, t.node_type, t.amount, t.merchant_raw, t.description FROM up
+        JOIN ledger.transactions t ON t.id = up.parent_id ORDER BY up.d DESC"""), {"id": txn_id, "uid": uid})]
+    email_id = _email_id(conn, uid, txn_id)
+    email = conn.execute(text(
+        "SELECT id, source, subject, sender, received_at, html_body <> '' AS has_html FROM ledger.raw_emails "
+        "WHERE id = :id AND user_id = :uid"), {"id": email_id, "uid": uid}).first() if email_id else None
+    t["email"] = dict(email._mapping) if email else None
+    order_pk = (t["raw"] or {}).get("ecommerce_order_id")
+    orders = conn.execute(text("""
+        SELECT platform, order_id, ordered_at, total_amount, raw->'sellers' AS sellers,
+               raw->>'payment_method' AS payment_method
+        FROM ledger.ecommerce_orders WHERE user_id = :uid AND (matched_txn_id = :id OR id = :o)
+        ORDER BY ordered_at, id"""), {"uid": uid, "id": txn_id, "o": order_pk}).all()
+    t["orders"] = [dict(r._mapping) for r in orders]
+    return t
+
+
+def email_body(conn, uid: int, txn_id: int) -> tuple[str, bool]:
+    """(body, is_html) of the email a row came from."""
+    get_one(conn, uid, txn_id)
+    email_id = _email_id(conn, uid, txn_id)
+    if email_id is None:
+        raise NotFound(txn_id)
+    r = conn.execute(text("SELECT html_body, text_body FROM ledger.raw_emails WHERE id = :id AND user_id = :uid"),
+                     {"id": email_id, "uid": uid}).one()
+    return (r.html_body, True) if r.html_body else (r.text_body or "", False)

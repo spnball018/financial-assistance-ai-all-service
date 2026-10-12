@@ -3,7 +3,9 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+import html
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 
 from app.auth import current_user_id
@@ -46,6 +48,27 @@ def list_transactions(status: Optional[Literal["pending", "confirmed", "ignored"
 def get_transaction(txn_id: int, uid: int = Depends(current_user_id)):
     with get_engine().connect() as conn:
         return _run(lambda: txns.get_one(conn, uid, txn_id))
+
+
+@router.get("/transactions/{txn_id}/details")
+def transaction_details(txn_id: int, uid: int = Depends(current_user_id)):
+    """The row plus what the parser read, its accounts, the rows above it, its email and matched orders."""
+    with get_engine().connect() as conn:
+        return _run(lambda: txns.details(conn, uid, txn_id))
+
+
+# The email is shown in a sandboxed iframe: no scripts, no forms, and no remote images (trackers).
+EMAIL_CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox"
+
+
+@router.get("/transactions/{txn_id}/email")
+def transaction_email(txn_id: int, uid: int = Depends(current_user_id)):
+    with get_engine().connect() as conn:
+        body, is_html = _run(lambda: txns.email_body(conn, uid, txn_id))
+    if not is_html:
+        body = f"<pre style='white-space:pre-wrap;font:14px sans-serif'>{html.escape(body)}</pre>"
+    return Response(body, media_type="text/html; charset=utf-8",
+                    headers={"Content-Security-Policy": EMAIL_CSP, "X-Content-Type-Options": "nosniff"})
 
 
 class TransactionPatch(BaseModel):
@@ -93,6 +116,13 @@ class ManualTransaction(BaseModel):
 def create_transaction(body: ManualTransaction, uid: int = Depends(current_user_id)):
     with get_engine().begin() as conn:
         return _run(lambda: txns.create_manual(conn, uid, **body.model_dump()))
+
+
+@router.get("/reports/expenses")
+def report_expenses(month: str, category_id: int, uid: int = Depends(current_user_id)):
+    """Confirmed expenses behind one category row of the summary (subcategories included)."""
+    with get_engine().connect() as conn:
+        return reports.expenses(conn, uid, _month(month), category_id)
 
 
 @router.get("/reports/summary")

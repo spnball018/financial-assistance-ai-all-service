@@ -48,3 +48,20 @@ def monthly_summary(conn, uid: int, month: str) -> dict:
             "count": sum(g["count"] for g in out), "pending_not_counted": pending, "categories": out,
             "transfers_out": transfers,
             "income": {"total": income_total, "categories": income}, "net": income_total - total}
+
+
+def expenses(conn, uid: int, month: str, category_id: int) -> list[dict]:
+    """The confirmed leaf expenses behind one row of the summary: a category, or a top-level category
+    with all its subcategories. `path` names the payment (and order) a line came from."""
+    return [dict(r._mapping) for r in conn.execute(text("""
+        SELECT v.id, v.occurred_at, v.has_time, v.amount, v.merchant_raw, v.description, v.node_type,
+               v.category_id, k.name_th AS category_th, a.name AS account_name,
+               array_remove(ARRAY[g.merchant_raw, p.merchant_raw], NULL) AS path
+        FROM ledger.v_reportable_expenses v
+        JOIN ledger.categories k ON k.id = v.category_id
+        JOIN ledger.accounts a ON a.id = v.account_id
+        LEFT JOIN ledger.transactions p ON p.id = v.parent_id
+        LEFT JOIN ledger.transactions g ON g.id = p.parent_id
+        WHERE v.user_id = :uid AND (k.id = :c OR k.parent_id = :c)
+          AND to_char(v.occurred_at AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM') = :m
+        ORDER BY v.amount DESC, v.occurred_at DESC"""), {"uid": uid, "c": category_id, "m": month})]
