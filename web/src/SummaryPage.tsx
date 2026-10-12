@@ -1,17 +1,32 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
-import { fmtMoney, thisMonth } from "./format";
-import type { Summary } from "./types";
+import { fmtMoney, fmtWhen, thisMonth } from "./format";
+import { TxnDetailPanel } from "./TxnDetailPanel";
+import type { ReportExpense, Summary } from "./types";
 
 export function SummaryPage() {
   const [month, setMonth] = useState(thisMonth());
   const [data, setData] = useState<Summary | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [open, setOpen] = useState<number | null>(null); // expanded category
+  const [rows, setRows] = useState<ReportExpense[] | null>(null);
+  const [detailId, setDetailId] = useState<number | null>(null);
 
   useEffect(() => {
     setError(null);
+    setOpen(null);
     api.summary(month).then(setData, (e: Error) => setError(e.message));
   }, [month]);
+
+  const toggle = (categoryId: number) => {
+    if (open === categoryId) {
+      setOpen(null);
+      return;
+    }
+    setOpen(categoryId);
+    setRows(null);
+    api.reportExpenses(month, categoryId).then(setRows, (e: Error) => setError(e.message));
+  };
 
   const max = Math.max(1, ...(data?.categories.map((c) => c.amount) ?? [1]));
 
@@ -50,13 +65,18 @@ export function SummaryPage() {
           <ul className="bars">
             {data.categories.map((g) => (
               <li key={g.category_id}>
-                <div className="bar-head">
-                  <span>{g.name_th}</span>
-                  <span className="num">{fmtMoney(g.amount)}</span>
-                </div>
-                <div className="bar">
-                  <div className="bar-fill" style={{ width: `${(g.amount / max) * 100}%` }} />
-                </div>
+                <button className="bar-toggle" onClick={() => toggle(g.category_id)} aria-expanded={open === g.category_id}>
+                  <div className="bar-head">
+                    <span>
+                      {open === g.category_id ? "▾" : "▸"} {g.name_th}
+                      <span className="muted small"> · {g.count} รายการ</span>
+                    </span>
+                    <span className="num">{fmtMoney(g.amount)}</span>
+                  </div>
+                  <div className="bar">
+                    <div className="bar-fill" style={{ width: `${(g.amount / max) * 100}%` }} />
+                  </div>
+                </button>
                 {g.subcategories.length > 0 && (
                   <ul className="subs">
                     {g.subcategories.map((s) => (
@@ -65,6 +85,27 @@ export function SummaryPage() {
                         <span className="num muted">
                           {fmtMoney(s.amount)} · {s.count} รายการ
                         </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {open === g.category_id && (
+                  <ul className="expenses">
+                    {rows === null && <li className="muted">กำลังโหลด…</li>}
+                    {rows?.map((r) => (
+                      <li key={r.id}>
+                        <button onClick={() => setDetailId(r.id)}>
+                          <span>
+                            {r.merchant_raw ?? "—"}
+                            <span className="muted small">
+                              {" "}
+                              · {fmtWhen(r.occurred_at, r.has_time)}
+                              {r.path.length > 0 && ` · ${r.path.join(" › ")}`}
+                              {g.subcategories.length > 0 && ` · ${r.category_th}`}
+                            </span>
+                          </span>
+                          <span className="num">{fmtMoney(r.amount)}</span>
+                        </button>
                       </li>
                     ))}
                   </ul>
@@ -89,6 +130,7 @@ export function SummaryPage() {
           )}
         </>
       )}
+      {detailId !== null && <TxnDetailPanel id={detailId} onClose={() => setDetailId(null)} />}
     </section>
   );
 }

@@ -33,6 +33,60 @@ export interface Txn {
   children: Txn[];
 }
 
+export interface TxnDetails extends Omit<Txn, "children"> {
+  raw: Record<string, unknown> | null;
+  account_name: string;
+  counter_account_name: string | null;
+  category_th: string | null;
+  source_ref: string | null;
+  dedup_key: string;
+  ancestors: { id: number; node_type: string; amount: number; merchant_raw: string | null; description: string | null }[];
+  email: { id: number; source: string; subject: string | null; sender: string | null; received_at: string | null; has_html: boolean } | null;
+  orders: { platform: string; order_id: string; ordered_at: string; total_amount: number; sellers: string[] | null; payment_method: string | null }[];
+}
+
+export type WalletEntryKind = "payment" | "top_up" | "transfer_out" | "transfer_in" | "refund" | "cashback" | "other";
+
+export interface WalletEntry {
+  occurred_at: string; // "YYYY-MM-DD HH:MM", Thai time
+  title: string;
+  amount: number;
+  direction: "out" | "in";
+  kind: WalletEntryKind;
+  date_shown: boolean; // false: above the first date header, the date is a guess
+  uncertain: boolean; // glare or the screen edge hid part of the amount or time
+}
+
+export interface WalletScreenshot {
+  id: number;
+  account_id: number;
+  uploaded_at: string;
+  ocr_status: "pending" | "done" | "failed";
+  ocr_result: { entries: WalletEntry[]; balance: number | null } | null;
+  ocr_error: string | null;
+  applied_at: string | null;
+}
+
+export interface WalletApplyResult {
+  new: number;
+  duplicate: number;
+  top_ups: { occurred_at: string; amount: number; status: "linked" | "already" | "not_found" | "ambiguous" | "confirmed"; transaction_id: number | null }[];
+}
+
+export interface ReportExpense {
+  id: number;
+  occurred_at: string;
+  has_time: boolean;
+  amount: number;
+  merchant_raw: string | null;
+  description: string | null;
+  node_type: string;
+  category_id: number;
+  category_th: string;
+  account_name: string;
+  path: string[];
+}
+
 export interface Category {
   id: number;
   parent_id: number | null;

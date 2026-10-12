@@ -3,6 +3,8 @@ import { api, ApiError } from "./api";
 import { CategorySelect, type Choice } from "./CategorySelect";
 import { CHANNEL_LABEL, fmtMoney, fmtWhen } from "./format";
 import { ReceiptPanel } from "./ReceiptPanel";
+import { TxnDetailPanel } from "./TxnDetailPanel";
+import { WalletImportPanel } from "./WalletImportPanel";
 import type { Account, Category, Receipt, Status, Txn } from "./types";
 
 const PAGE = 200;
@@ -48,6 +50,10 @@ export function ReviewPage({ categories, accounts }: { categories: Category[]; a
   const [uploading, setUploading] = useState<number | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const uploadTarget = useRef<Txn | null>(null);
+
+  const [detailId, setDetailId] = useState<number | null>(null);
+  const [walletImport, setWalletImport] = useState(false);
+  const accountName = useMemo(() => new Map(accounts.map((a) => [a.id, a.name])), [accounts]);
 
   const uncategorizedId = useMemo(
     () => categories.find((c) => c.parent_id === null && c.name_en === "Uncategorized")?.id,
@@ -190,6 +196,16 @@ export function ReviewPage({ categories, accounts }: { categories: Category[]; a
     }
   };
 
+  const unlinkOrders = async (t: Txn) => {
+    if (!window.confirm("รายการนี้ไม่ใช่การจ่ายคำสั่งซื้อเหล่านี้? ระบบจะเอาคำสั่งซื้อออกและไม่จับคู่กับรายการนี้อีก")) return;
+    try {
+      await api.unlinkOrders(t.id);
+      await load();
+    } catch (e) {
+      setMessage({ kind: "error", text: (e as Error).message });
+    }
+  };
+
   const toggle = (set: Set<number>, id: number) => {
     const next = new Set(set);
     if (next.has(id)) next.delete(id);
@@ -201,6 +217,8 @@ export function ReviewPage({ categories, accounts }: { categories: Category[]; a
 
   const renderRow = (t: Txn, depth: number) => {
     const isLeaf = t.children.length === 0;
+    // an order's items are what get categories: always show them under the order
+    const open = expanded.has(t.id) || t.node_type === "order";
     const editable = t.status !== "confirmed" || isLeaf; // confirmed leaves can still be re-categorized
     return (
       <Fragment key={t.id}>
@@ -217,14 +235,22 @@ export function ReviewPage({ categories, accounts }: { categories: Category[]; a
           </td>
           <td className="c-date nowrap muted">{fmtWhen(t.occurred_at, t.has_time)}</td>
           <td className="c-merchant" style={{ paddingLeft: 8 + depth * 20 }}>
-            {!isLeaf && (
+            {!isLeaf && t.node_type !== "order" && (
               <button className="link" onClick={() => setExpanded((s) => toggle(s, t.id))}>
                 {expanded.has(t.id) ? "▾" : "▸"}
               </button>
             )}{" "}
-            <span className="merchant">{t.merchant_raw ?? "—"}</span>
+            <button className="merchant merchant-link" onClick={() => setDetailId(t.id)} title="ดูรายละเอียด">
+              {t.merchant_raw ?? "—"}
+            </button>
             {t.needs_review && <span className="badge badge-warn">ยอดลูกไม่ตรง</span>}
-            <div className="muted small">{CHANNEL_LABEL[t.channel ?? ""] ?? t.channel ?? t.node_type}</div>
+            {depth === 0 && t.children.some((c) => c.node_type === "order") && (
+              <span className="badge">คำสั่งซื้อ {t.children.filter((c) => c.node_type === "order").length} รายการ</span>
+            )}
+            <div className="muted small">
+              {depth === 0 && <span className="account">{accountName.get(t.account_id) ?? `บัญชี #${t.account_id}`} · </span>}
+              {depth > 0 && t.description ? t.description : CHANNEL_LABEL[t.channel ?? ""] ?? t.channel ?? CHANNEL_LABEL[t.node_type] ?? t.node_type}
+            </div>
           </td>
           <td className="c-amount num">{fmtMoney(t.amount)}</td>
           <td className="c-cat">
@@ -239,7 +265,7 @@ export function ReviewPage({ categories, accounts }: { categories: Category[]; a
                 onChange={(choice) => setCategory(t, choice)}
               />
             ) : (
-              <span className="muted small">{t.kind === "opening" ? "ยอดยกมา" : t.kind === "income" ? "รายรับ" : "ดูรายการย่อย"}</span>
+              <span className="muted small">{t.kind === "opening" ? "ยอดยกมา" : t.kind === "income" ? "รายรับ" : t.node_type === "order" ? "เลือกหมวดที่สินค้าข้างล่าง" : "ดูรายการย่อย"}</span>
             )}
             {isLeaf && t.merchant_key && (
               <label className="remember small muted" title="ผู้รับที่แต่ละครั้งเป็นคนละเรื่อง เช่น โอนให้เพื่อน">
@@ -269,6 +295,11 @@ export function ReviewPage({ categories, accounts }: { categories: Category[]; a
                 {uploading === t.id ? "กำลังอ่าน…" : t.receipts > 0 ? "ใบเสร็จ" : "แนบใบเสร็จ"}
               </button>
             )}
+            {depth === 0 && t.status === "pending" && t.children.some((c) => c.node_type === "order") && (
+              <button className="link" onClick={() => unlinkOrders(t)}>
+                ไม่ใช่คำสั่งซื้อนี้
+              </button>
+            )}
             {depth === 0 && t.status === "pending" && !isLeaf && t.children.some((c) => c.receipt_id) && (
               <button className="link" onClick={() => undoSplit(t)}>
                 ยกเลิกการแยก
@@ -295,7 +326,7 @@ export function ReviewPage({ categories, accounts }: { categories: Category[]; a
             </td>
           </tr>
         )}
-        {expanded.has(t.id) && t.children.map((c) => renderRow(c, depth + 1))}
+        {open && t.children.map((c) => renderRow(c, depth + 1))}
       </Fragment>
     );
   };
@@ -341,6 +372,9 @@ export function ReviewPage({ categories, accounts }: { categories: Category[]; a
         <div className="spacer" />
         <button onClick={refresh} disabled={syncing} title="ดึงอีเมลธนาคาร/บัตรใหม่จาก Gmail แล้วจัดหมวด">
           {syncing ? "กำลังดึงอีเมล…" : "⟳ ดึงอีเมลใหม่"}
+        </button>
+        <button onClick={() => setWalletImport(true)} title="ถ่ายรูปหน้าประวัติรายการในแอป TrueMoney หรือ wallet อื่น">
+          นำเข้ารูป wallet
         </button>
         {status === "pending" && (
           <>
@@ -417,6 +451,8 @@ export function ReviewPage({ categories, accounts }: { categories: Category[]; a
           </button>
         </div>
       )}
+      {detailId !== null && <TxnDetailPanel id={detailId} onClose={() => setDetailId(null)} />}
+      {walletImport && <WalletImportPanel accounts={accounts} onClose={() => setWalletImport(false)} onSaved={load} />}
     </section>
   );
 }

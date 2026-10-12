@@ -206,3 +206,46 @@ a.button.primary { background: var(--accent); border-color: var(--accent); color
 .token-actions { display: flex; gap: 8px; align-items: center; }
 .message.warn { background: var(--warn-bg); color: var(--warn); align-items: center; }
 .gmail-banner a.button { white-space: nowrap; }
+
+/* transaction detail panel */
+.overlay { position: fixed; inset: 0; background: rgb(0 0 0 / 0.4); display: flex; justify-content: center;
+  align-items: flex-start; padding: 32px 16px; overflow-y: auto; z-index: 10; }
+.panel { background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 10px;
+  padding: 16px; width: 100%; max-width: 640px; }
+.panel-head { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 8px; }
+.panel-head .total { font-size: 22px; }
+.details { display: grid; gap: 6px; margin: 8px 0 12px; }
+.details > div { display: grid; grid-template-columns: 140px 1fr; gap: 8px; }
+.details dt { color: var(--muted); }
+.details dd { margin: 0; overflow-wrap: anywhere; }
+iframe.email { width: 100%; height: 480px; border: 1px solid var(--border); border-radius: 6px; background: #fff; margin-top: 8px; }
+button.merchant-link { background: none; border: 0; padding: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+button.merchant-link:hover { text-decoration: underline; }
+.bar-toggle { all: unset; display: block; width: 100%; cursor: pointer; }
+.expenses { list-style: none; padding: 0; margin: 8px 0 0; display: grid; gap: 2px; font-size: 13px;
+  border-top: 1px solid var(--border); padding-top: 8px; }
+.expenses li button { all: unset; box-sizing: border-box; width: 100%; display: flex; justify-content: space-between;
+  gap: 8px; padding: 4px; border-radius: 4px; cursor: pointer; }
+.expenses li button:hover { background: var(--selected); }
+@media (max-width: 600px) { .details > div { grid-template-columns: 1fr; gap: 0; } }
+
+/* wallet screenshot import */
+.panel.wide { max-width: 980px; }
+.wallet-shot { display: grid; grid-template-columns: 160px 1fr; gap: 12px; border-top: 1px solid var(--border); padding-top: 12px; margin-top: 12px; }
+.wallet-shot img { width: 160px; border: 1px solid var(--border); border-radius: 6px; }
+.wallet-shot-body { display: grid; gap: 8px; align-content: start; min-width: 0; }
+.wallet-entries { width: 100%; border-collapse: collapse; font-size: 13px; }
+.wallet-entries th { text-align: left; color: var(--muted); font-weight: 500; }
+.wallet-entries td { padding: 2px 4px; vertical-align: top; }
+.wallet-entries input:not([type="checkbox"]), .wallet-entries select { font: inherit; padding: 2px 4px; border: 1px solid var(--border);
+  border-radius: 4px; background: var(--surface); color: var(--text); width: 100%; box-sizing: border-box; }
+.wallet-entries input[type="number"] { width: 90px; }
+.wallet-entries tr.muted input { opacity: 0.5; }
+@media (max-width: 700px) {
+  .wallet-shot { grid-template-columns: 1fr; }
+  .wallet-shot img { width: 120px; }
+  .wallet-entries { display: block; overflow-x: auto; }
+}
+.panel img.screenshot { max-width: 100%; max-height: 520px; border: 1px solid var(--border); border-radius: 6px; }
+.wallet-entries tr.uncertain td { background: var(--warn-bg); }
+.warn-text { color: var(--warn); }

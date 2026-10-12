@@ -21,6 +21,7 @@ export const CHANNEL_LABEL: Record<string, string> = {
   donation: "บริจาค",
   receipt_item: "จากใบเสร็จ",
   adjustment: "ปรับยอด",
+  order: "คำสั่งซื้อ",
   order_item: "สินค้าในคำสั่งซื้อ",
   statement_line: "รายการในบิลบัตร",
   opening_balance: "ยอดยกมา",

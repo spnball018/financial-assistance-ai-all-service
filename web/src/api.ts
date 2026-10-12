@@ -1,4 +1,4 @@
-import type { Account, AccountInput, ApiToken, Balance, Category, CreatedApiToken, EmailSource, GmailStatus, Me, MerchantRule, User, Receipt, TransferMatch, ConfirmResult, Status, Summary, SyncResult, Txn } from "./types";
+import type { Account, AccountInput, ApiToken, Balance, Category, CreatedApiToken, EmailSource, GmailStatus, Me, MerchantRule, User, Receipt, TransferMatch, ConfirmResult, Status, Summary, SyncResult, Txn, TxnDetails, ReportExpense, WalletApplyResult, WalletEntry, WalletScreenshot } from "./types";
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -95,6 +95,14 @@ export const api = {
     form.append("file", file);
     return call<Receipt>(`/transactions/${txnId}/receipts`, { method: "POST", body: form });
   },
+  uploadWalletScreenshot: (accountId: number, file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return call<WalletScreenshot>(`/wallets/${accountId}/screenshots`, { method: "POST", body: form });
+  },
+  rereadWalletScreenshot: (id: number) => call<WalletScreenshot>(`/wallet-screenshots/${id}/read`, { method: "POST" }),
+  applyWalletScreenshot: (id: number, entries: WalletEntry[]) =>
+    call<WalletApplyResult>(`/wallet-screenshots/${id}/apply`, { method: "POST", body: JSON.stringify({ entries }) }),
   receipts: (txnId: number) => call<Receipt[]>(`/transactions/${txnId}/receipts`),
   rereadReceipt: (id: number) => call<Receipt>(`/receipts/${id}/read`, { method: "POST" }),
   applyReceipt: (id: number, items: { name: string; amount: number; category_id: number | null; confidence: number | null }[]) =>
@@ -103,6 +111,7 @@ export const api = {
       body: JSON.stringify({ items }),
     }),
   undoReceipt: (txnId: number) => call<{ removed: number }>(`/transactions/${txnId}/receipt-items`, { method: "DELETE" }),
+  unlinkOrders: (txnId: number) => call<{ removed: number }>(`/reconcile/orders/${txnId}`, { method: "DELETE" }),
   createTransaction: (body: {
     kind: "expense" | "income";
     account_id: number;
@@ -117,4 +126,8 @@ export const api = {
     call<ConfirmResult>("/transactions/confirm", { method: "POST", body: JSON.stringify(body) }),
   sync: () => call<SyncResult>("/sync", { method: "POST" }),
   summary: (month: string) => call<Summary>(`/reports/summary?month=${month}`),
+  reportExpenses: (month: string, categoryId: number) =>
+    call<ReportExpense[]>(`/reports/expenses?month=${month}&category_id=${categoryId}`),
+  txnDetails: (id: number) => call<TxnDetails>(`/transactions/${id}/details`),
+  txnEmail: async (id: number) => (await send(`/transactions/${id}/email`)).text(),
 };
