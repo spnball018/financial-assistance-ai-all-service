@@ -323,10 +323,10 @@ Response `200`: `{"removed": 2}` · `404` ไม่มีรายการ · `
 
 ### รูปหน้าจอ e-wallet (TrueMoney ฯลฯ)
 
-wallet เป็นบัญชีที่มีรายการของตัวเอง แบบเดียวกับบัตร KTC แต่ข้อมูลมาจากรูปหน้าจอประวัติรายการในแอป อ่านด้วย Gemini vision (ตั้งค่าเดียวกับใบเสร็จ ไม่มี key ได้ `503`) รูปเก็บใน `RECEIPTS_DIR` เหมือนใบเสร็จ
+wallet หรือบัตรเครดิต (`ewallet` / `credit_card`) เป็นบัญชีที่มีรายการของตัวเอง แบบเดียวกับบัตร KTC แต่ข้อมูลมาจากรูปหน้าจอประวัติรายการในแอป สำหรับบัตร การชำระบัตรนับเป็น `top_up` (จับคู่กับรายการธนาคารที่ชื่อผู้รับเข้ากับผู้ออกบัตร เช่น Bangkok Bank: `bangkok ?bank|ธนาคารกรุงเทพ|bualuang|บัวหลวง`) อ่านด้วย Gemini vision (ตั้งค่าเดียวกับใบเสร็จ ไม่มี key ได้ `503`) รูปเก็บใน `RECEIPTS_DIR` เหมือนใบเสร็จ
 
 #### ✅ `POST /wallets/{account_id}/screenshots` (multipart `file`) → 201
-อัปโหลดแล้วอ่านทันที ยังไม่บันทึกรายการ บัญชีต้องเป็น `ewallet` (`422`), รูปเดิมซ้ำได้ `409`
+อัปโหลดแล้วอ่านทันที ยังไม่บันทึกรายการ บัญชีต้องเป็น `ewallet` หรือ `credit_card` (`422`), รูปเดิมซ้ำได้ `409`
 ```json
 {"id": 3, "account_id": 10, "ocr_status": "done", "applied_at": null,
  "ocr_result": {"balance": 310.0, "entries": [
@@ -455,7 +455,7 @@ Errors: `404` · `422` หมวดใช้ไม่ได้ หรือเ�
 Errors: `404` มี id ที่ไม่มีอยู่ (ไม่มีอะไรถูก confirm) · `422` ไม่ได้ส่ง `ids` หรือ `all`
 
 #### ✅ `POST /transactions`
-บันทึกรายจ่ายหรือรายรับเอง (เช่น เงินสด, TrueMoney, ค่าเช่าที่ได้รับ) ได้สถานะ `confirmed` ทันที (`node_type=manual`, `source=manual`) `kind` = `expense` (ค่าเริ่มต้น) หรือ `income` หมวดต้องเป็นชนิดเดียวกับ `kind` และรายรับจะไม่ถูกจำใน Merchant Memory
+บันทึกรายจ่าย รายรับ หรือการโอนเข้าบัญชีตัวเองเอง (เช่น เงินสด, ค่าเช่าที่ได้รับ, ย้ายเงินไปบัญชีสำรอง) ได้สถานะ `confirmed` ทันที (`node_type=manual`, `source=manual`) `kind` = `expense` (ค่าเริ่มต้น), `income` หรือ `transfer` · expense/income ต้องมี `category_id` ชนิดเดียวกับ `kind` · `transfer` ต้องมี `transfer_account_id` (บัญชีของผู้ใช้ที่ไม่ใช่บัญชีต้นทาง) ไม่มีหมวด ไม่นับเป็นรายจ่าย (ขึ้นใน `transfers_out` ของสรุป) · รายรับและการโอนไม่ถูกจำใน Merchant Memory
 ```json
 {"account_id": 1, "amount": "45.50", "occurred_at": "2026-09-20T12:30:00+07:00", "category_id": 3,
  "merchant": "ร้านข้าวมันไก่", "description": null, "has_time": true}

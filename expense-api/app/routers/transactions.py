@@ -105,11 +105,12 @@ class ManualTransaction(BaseModel):
     account_id: int
     amount: Decimal = Field(gt=0, max_digits=15, decimal_places=2)
     occurred_at: datetime
-    category_id: int
+    category_id: Optional[int] = None  # required unless kind is transfer
     merchant: Optional[str] = None
     description: Optional[str] = None
     has_time: bool = True
-    kind: Literal["expense", "income"] = "expense"
+    kind: Literal["expense", "income", "transfer"] = "expense"
+    transfer_account_id: Optional[int] = None  # kind=transfer: the user's account the money went to
 
 
 @router.post("/transactions", status_code=201)

@@ -13,10 +13,11 @@ function nowInBangkok(): { date: string; time: string } {
   return { date: `${p.year}-${p.month}-${p.day}`, time: `${p.hour}:${p.minute}` };
 }
 
-/** Cash, TrueMoney, income... anything without an email. Saved as confirmed right away. */
+/** Cash, TrueMoney, income, a move between own accounts... anything without an email. Saved as confirmed right away. */
 export function ManualEntryPage({ categories, accounts }: { categories: Category[]; accounts: Account[] }) {
   const start = nowInBangkok();
-  const [kind, setKind] = useState<"expense" | "income">("expense");
+  const [kind, setKind] = useState<"expense" | "income" | "transfer">("expense");
+  const [toAccountId, setToAccountId] = useState<number | "">("");
   const [accountId, setAccountId] = useState<number | "">("");
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState(start.date);
@@ -31,13 +32,18 @@ export function ManualEntryPage({ categories, accounts }: { categories: Category
 
   const active = accounts.filter((a) => a.is_active);
   const catName = (id: number | null) => categories.find((c) => c.id === id)?.name_th ?? "";
+  const accountName = (id: number | null) => accounts.find((a) => a.id === id)?.name ?? "";
   // leaf categories of this kind, grouped by parent
   const groups = useMemo(() => {
     const parents = categories.filter((c) => c.parent_id === null && c.kind === kind);
     return parents.map((p) => ({ parent: p, leaves: categories.filter((c) => c.parent_id === p.id) }));
   }, [categories, kind]);
 
-  const valid = accountId !== "" && categoryId !== "" && Number(amount) > 0 && date !== "";
+  const valid =
+    accountId !== "" &&
+    (kind === "transfer" ? toAccountId !== "" && toAccountId !== accountId : categoryId !== "") &&
+    Number(amount) > 0 &&
+    date !== "";
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -51,7 +57,8 @@ export function ManualEntryPage({ categories, accounts }: { categories: Category
         amount,
         occurred_at: `${date}T${hasTime ? time : "00:00"}:00+07:00`,
         has_time: hasTime,
-        category_id: Number(categoryId),
+        category_id: kind === "transfer" ? null : Number(categoryId),
+        transfer_account_id: kind === "transfer" ? Number(toAccountId) : null,
         merchant: merchant.trim() || null,
         description: description.trim() || null,
       });
@@ -69,10 +76,13 @@ export function ManualEntryPage({ categories, accounts }: { categories: Category
   return (
     <section className="manual">
       <h2>บันทึกรายการเอง</h2>
-      <p className="muted small">สำหรับรายการที่ไม่มีอีเมล เช่น เงินสด, TrueMoney หรือรายรับ บันทึกแล้วนับในรายงานทันที</p>
+      <p className="muted small">
+        สำหรับรายการที่ไม่มีอีเมล เช่น เงินสด, รายรับ หรือย้ายเงินระหว่างบัญชีของตัวเอง บันทึกแล้วนับในรายงานทันที
+        (การโอนเข้าบัญชีตัวเองไม่นับเป็นรายจ่าย)
+      </p>
       <form onSubmit={submit} className="form-grid">
         <div className="tabs full" role="radiogroup">
-          {(["expense", "income"] as const).map((k) => (
+          {(["expense", "income", "transfer"] as const).map((k) => (
             <button
               type="button"
               key={k}
@@ -84,12 +94,12 @@ export function ManualEntryPage({ categories, accounts }: { categories: Category
                 setCategoryId("");
               }}
             >
-              {k === "expense" ? "รายจ่าย" : "รายรับ"}
+              {{ expense: "รายจ่าย", income: "รายรับ", transfer: "โอนเข้าบัญชีตัวเอง" }[k]}
             </button>
           ))}
         </div>
         <label>
-          บัญชี
+          {kind === "transfer" ? "จากบัญชี" : "บัญชี"}
           <select value={accountId} onChange={(e) => setAccountId(e.target.value ? Number(e.target.value) : "")} required>
             <option value="">— เลือกบัญชี —</option>
             {active.map((a) => (
@@ -122,6 +132,19 @@ export function ManualEntryPage({ categories, accounts }: { categories: Category
             </span>
           </span>
         </label>
+        {kind === "transfer" ? (
+          <label className="full">
+            ไปบัญชี
+            <select value={toAccountId} onChange={(e) => setToAccountId(e.target.value ? Number(e.target.value) : "")} required>
+              <option value="">— เลือกบัญชีปลายทาง —</option>
+              {active.filter((a) => a.id !== accountId).map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : (
         <label className="full">
           หมวด
           <select value={categoryId} onChange={(e) => setCategoryId(e.target.value ? Number(e.target.value) : "")} required>
@@ -143,8 +166,9 @@ export function ManualEntryPage({ categories, accounts }: { categories: Category
             )}
           </select>
         </label>
+        )}
         <label>
-          {kind === "expense" ? "ร้าน / ผู้รับ" : "ผู้จ่าย"}
+          {kind === "income" ? "ผู้จ่าย" : kind === "transfer" ? "รายละเอียด" : "ร้าน / ผู้รับ"}
           <input value={merchant} onChange={(e) => setMerchant(e.target.value)} placeholder="ไม่บังคับ" />
         </label>
         <label>
@@ -166,7 +190,9 @@ export function ManualEntryPage({ categories, accounts }: { categories: Category
             {saved.map((t) => (
               <li key={t.id}>
                 <span>
-                  {t.kind === "income" ? "รายรับ" : "รายจ่าย"} · {catName(t.category_id)}
+                  {t.kind === "transfer"
+                    ? `โอน → ${accountName(t.counter_account_id)}`
+                    : `${t.kind === "income" ? "รายรับ" : "รายจ่าย"} · ${catName(t.category_id)}`}
                   {t.merchant_raw ? ` · ${t.merchant_raw}` : ""}
                   <span className="muted small"> · {fmtWhen(t.occurred_at, t.has_time)}</span>
                 </span>

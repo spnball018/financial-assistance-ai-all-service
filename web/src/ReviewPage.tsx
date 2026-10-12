@@ -373,8 +373,8 @@ export function ReviewPage({ categories, accounts }: { categories: Category[]; a
         <button onClick={refresh} disabled={syncing} title="ดึงอีเมลธนาคาร/บัตรใหม่จาก Gmail แล้วจัดหมวด">
           {syncing ? "กำลังดึงอีเมล…" : "⟳ ดึงอีเมลใหม่"}
         </button>
-        <button onClick={() => setWalletImport(true)} title="ถ่ายรูปหน้าประวัติรายการในแอป TrueMoney หรือ wallet อื่น">
-          นำเข้ารูป wallet
+        <button onClick={() => setWalletImport(true)} title="ถ่ายรูปหน้าประวัติรายการในแอป TrueMoney, wallet อื่น หรือแอปบัตรเครดิต">
+          นำเข้ารูปจากแอป
         </button>
         {status === "pending" && (
           <>

@@ -250,12 +250,14 @@ def confirm(conn, uid: int, ids: Optional[list[int]] = None, all_pending: bool =
             "applied_to_pending": applied}
 
 
-def create_manual(conn, uid: int, *, account_id: int, amount: Decimal, occurred_at: datetime, category_id: int,
-                  merchant: Optional[str] = None, description: Optional[str] = None, has_time: bool = True,
-                  kind: str = "expense") -> dict:
-    """Cash, TrueMoney, income... anything without an email: confirmed immediately."""
-    if kind not in ("expense", "income"):
-        raise Invalid("kind must be expense or income")
+def create_manual(conn, uid: int, *, account_id: int, amount: Decimal, occurred_at: datetime,
+                  category_id: Optional[int] = None, merchant: Optional[str] = None, description: Optional[str] = None,
+                  has_time: bool = True, kind: str = "expense", transfer_account_id: Optional[int] = None) -> dict:
+    """Cash, TrueMoney, income... anything without an email: confirmed immediately.
+    kind=transfer moves money to another of the user's accounts (transfer_account_id): no category, never
+    counted as spending, and not learned."""
+    if kind not in ("expense", "income", "transfer"):
+        raise Invalid("kind must be expense, income or transfer")
     if amount <= 0:
         raise Invalid("amount must be positive")
     if occurred_at.tzinfo is None:
@@ -263,15 +265,28 @@ def create_manual(conn, uid: int, *, account_id: int, amount: Decimal, occurred_
     if not conn.execute(text("SELECT EXISTS (SELECT 1 FROM ledger.accounts WHERE id = :a AND user_id = :uid)"),
                         {"a": account_id, "uid": uid}).scalar():
         raise Invalid(f"account {account_id} does not exist")
-    check_category(conn, category_id, kind)
+    if kind == "transfer":
+        if transfer_account_id is None or transfer_account_id == account_id:
+            raise Invalid("a transfer needs transfer_account_id, a different account")
+        if not conn.execute(text("SELECT EXISTS (SELECT 1 FROM ledger.accounts WHERE id = :a AND user_id = :uid)"),
+                            {"a": transfer_account_id, "uid": uid}).scalar():
+            raise Invalid(f"account {transfer_account_id} does not exist")
+        category_id = None
+    else:
+        if category_id is None:
+            raise Invalid("category_id is required")
+        check_category(conn, category_id, kind)
+        transfer_account_id = None
     key = normalize_merchant(merchant)
     new_id = conn.execute(text("""
-        INSERT INTO ledger.transactions (user_id, account_id, node_type, kind, status, amount, occurred_at, has_time,
-          source, dedup_key, merchant_raw, merchant_key, description, category_id, category_source, confirmed_at)
-        VALUES (:uid, :a, 'manual', :kind, 'confirmed', :amt, :at, :ht, 'manual', :dk, :m, :k, :d, :c, 'manual', now())
+        INSERT INTO ledger.transactions (user_id, account_id, counter_account_id, node_type, kind, status, amount,
+          occurred_at, has_time, source, dedup_key, merchant_raw, merchant_key, description, category_id,
+          category_source, confirmed_at)
+        VALUES (:uid, :a, :to, 'manual', :kind, 'confirmed', :amt, :at, :ht, 'manual', :dk, :m, :k, :d, :c, 'manual',
+                now())
         RETURNING id"""), {"a": account_id, "amt": amount, "at": occurred_at, "ht": has_time,
                            "dk": f"manual:{uuid.uuid4()}", "m": merchant, "k": key, "d": description,
-                           "c": category_id, "kind": kind, "uid": uid}).scalar()
+                           "c": category_id, "kind": kind, "to": transfer_account_id, "uid": uid}).scalar()
     # income payers are not learned: Merchant Memory only categorizes expenses
     if kind == "expense" and key and category_id != _uncategorized_id(conn) and not memory.is_ask(conn, uid, key):
         memory.remember(conn, uid, key, category_id)

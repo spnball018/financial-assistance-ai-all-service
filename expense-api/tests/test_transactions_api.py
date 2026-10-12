@@ -161,3 +161,19 @@ def test_manual_income_and_monthly_net(api, db):
     t = r.json()["id"]
     assert api.patch(f"/transactions/{t}", json={"category_id": cat(db, "Freelance")}).json()["kind"] == "income"
     assert api.patch(f"/transactions/{t}", json={"transfer_account_id": 3}).status_code == 422
+
+
+def test_manual_transfer_between_own_accounts(api, db):
+    body = {"account_id": 1, "amount": "500", "occurred_at": "2026-09-02T10:00:00+07:00", "kind": "transfer",
+            "transfer_account_id": 3, "merchant": "ย้ายเงินสำรอง"}
+    r = api.post("/transactions", json=body)
+    assert r.status_code == 201
+    t = r.json()
+    assert (t["kind"], t["counter_account_id"], t["category_id"], t["status"]) == ("transfer", 3, None, "confirmed")
+    assert q(db, "SELECT count(*) FROM ledger.merchant_memory") == 0
+    s = api.get("/reports/summary", params={"month": "2026-09"}).json()
+    assert Decimal(str(s["total"])) == 0
+    assert [(x["account_id"], Decimal(str(x["amount"]))) for x in s["transfers_out"]] == [(3, Decimal("500"))]
+    assert api.post("/transactions", json={**body, "transfer_account_id": 1}).status_code == 422   # same account
+    assert api.post("/transactions", json={**body, "transfer_account_id": None}).status_code == 422
+    assert api.post("/transactions", json={**body, "kind": "expense"}).status_code == 422          # no category

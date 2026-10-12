@@ -113,12 +113,13 @@ export const api = {
   undoReceipt: (txnId: number) => call<{ removed: number }>(`/transactions/${txnId}/receipt-items`, { method: "DELETE" }),
   unlinkOrders: (txnId: number) => call<{ removed: number }>(`/reconcile/orders/${txnId}`, { method: "DELETE" }),
   createTransaction: (body: {
-    kind: "expense" | "income";
+    kind: "expense" | "income" | "transfer";
     account_id: number;
     amount: string;
     occurred_at: string;
     has_time: boolean;
-    category_id: number;
+    category_id: number | null;
+    transfer_account_id?: number | null;
     merchant: string | null;
     description: string | null;
   }) => call<Txn>("/transactions", { method: "POST", body: JSON.stringify(body) }),
