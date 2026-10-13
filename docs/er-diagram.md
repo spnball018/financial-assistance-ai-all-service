@@ -51,6 +51,7 @@ erDiagram
         text merchant_raw
         text merchant_key "ใช้ค้น merchant_memory"
         text description
+        text note "โน้ตของผู้ใช้ แก้ได้ทุกรายการ"
         int category_id FK
         text category_source "none | memory | ai | user | manual | account"
         numeric ai_confidence

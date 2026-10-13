@@ -12,7 +12,7 @@ from categorize import memory
 from categorize.normalize import normalize_merchant
 
 COLUMNS = """t.id, t.parent_id, t.account_id, t.counter_account_id, t.node_type, t.kind, t.status, t.needs_review,
-  t.amount, t.currency, t.occurred_at, t.has_time, t.source, t.merchant_raw, t.merchant_key, t.description,
+  t.amount, t.currency, t.occurred_at, t.has_time, t.source, t.merchant_raw, t.merchant_key, t.description, t.note,
   t.category_id, t.category_source, t.ai_confidence, t.ai_reason, t.confirmed_at, t.raw->>'channel' AS channel,
   t.raw->>'to_account' AS to_account, t.receipt_id, t.ref_transaction_id,
   (SELECT count(*) FROM ledger.receipts r WHERE r.transaction_id = t.id) AS receipts,
@@ -100,12 +100,13 @@ def _is_leaf(conn, txn_id: int) -> bool:
 
 def update(conn, uid: int, txn_id: int, *, category_id: Optional[int] = None, transfer_account_id: Optional[int] = None,
            description: Optional[str] = None, status: Optional[str] = None, remember: Optional[bool] = None,
-           fields: set[str]) -> dict:
+           note: Optional[str] = None, fields: set[str]) -> dict:
     """Partial update; `fields` lists what the client actually sent (so description can be cleared).
 
     category_id         -> an expense in that category (turns a transfer back into an expense)
     transfer_account_id -> a transfer to one of the user's accounts (not an expense, no category)
-    remember=False      -> never remember this payee (rule 'ask'); True lifts that"""
+    remember=False      -> never remember this payee (rule 'ask'); True lifts that
+    note                -> the user's own note, on any row and in any status"""
     current = get_one(conn, uid, txn_id)   # NotFound for another user's id; the rest uses ids checked here
     if "category_id" in fields and "transfer_account_id" in fields:
         raise Invalid("send either category_id or transfer_account_id, not both")
@@ -161,6 +162,9 @@ def update(conn, uid: int, txn_id: int, *, category_id: Optional[int] = None, tr
     if "description" in fields:
         conn.execute(text("UPDATE ledger.transactions SET description = :d, updated_at = now() WHERE id = :id"),
                      {"d": description, "id": txn_id})
+    if "note" in fields:
+        conn.execute(text("UPDATE ledger.transactions SET note = :n, updated_at = now() WHERE id = :id"),
+                     {"n": (note or "").strip()[:2000] or None, "id": txn_id})
     return get_one(conn, uid, txn_id)
 
 
@@ -309,7 +313,8 @@ def details(conn, uid: int, txn_id: int) -> dict:
     t = get_one(conn, uid, txn_id)
     extra = conn.execute(text("""
         SELECT t.raw, a.name AS account_name, ca.name AS counter_account_name, k.name_th AS category_th,
-               t.source_ref, t.dedup_key
+               t.source_ref, t.dedup_key,
+               EXISTS (SELECT 1 FROM ledger.transactions c WHERE c.parent_id = t.id) AS has_children
         FROM ledger.transactions t JOIN ledger.accounts a ON a.id = t.account_id
         LEFT JOIN ledger.accounts ca ON ca.id = t.counter_account_id
         LEFT JOIN ledger.categories k ON k.id = t.category_id

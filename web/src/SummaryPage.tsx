@@ -103,6 +103,7 @@ export function SummaryPage() {
                               {r.path.length > 0 && ` · ${r.path.join(" › ")}`}
                               {g.subcategories.length > 0 && ` · ${r.category_th}`}
                             </span>
+                            {r.note && <span className="small note"> 📝 {r.note}</span>}
                           </span>
                           <span className="num">{fmtMoney(r.amount)}</span>
                         </button>

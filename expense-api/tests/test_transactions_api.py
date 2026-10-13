@@ -197,3 +197,11 @@ def test_edit_and_delete_manual_entry_only(api, db):
     assert api.delete(f"/transactions/{mail}").status_code == 422
     assert api.delete(f"/transactions/{t}").status_code == 204
     assert api.get(f"/transactions/{t}").status_code == 404
+
+
+def test_note_on_any_row_any_status(api, db):
+    t = add(db, "n", "SHOP", "100", status="confirmed")
+    r = api.patch(f"/transactions/{t}", json={"note": "  ของขวัญวันเกิดแม่  "})
+    assert r.status_code == 200 and r.json()["note"] == "ของขวัญวันเกิดแม่"
+    assert api.get("/transactions", params={"status": "confirmed"}).json()["items"][0]["note"] == "ของขวัญวันเกิดแม่"
+    assert api.patch(f"/transactions/{t}", json={"note": ""}).json()["note"] is None

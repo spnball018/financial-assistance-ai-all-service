@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
+import { CategorySelect, type Choice } from "./CategorySelect";
 import { CHANNEL_LABEL, fmtMoney, fmtWhen } from "./format";
-import type { Account, TxnDetails } from "./types";
+import type { Account, Category, TxnDetails } from "./types";
 
 const STATUS_LABEL: Record<string, string> = { pending: "รอตรวจ", confirmed: "ยืนยันแล้ว", ignored: "ไม่นับ" };
 const SOURCE_LABEL: Record<string, string> = {
@@ -54,22 +55,60 @@ export function TxnDetailPanel({ id, onClose, onChanged }: { id: number; onClose
   const [error, setError] = useState<string | null>(null);
   const [email, setEmail] = useState<string | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [note, setNote] = useState("");
+  const [noteSaved, setNoteSaved] = useState(false);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const load = () => api.txnDetails(id).then(setD, (e: Error) => setError(e.message));
+  const load = () =>
+    api.txnDetails(id).then((x) => {
+      setD(x);
+      setNote(x.note ?? "");
+    }, (e: Error) => setError(e.message));
   useEffect(() => {
     setD(null);
     setEmail(null);
     setDraft(null);
+    setNoteSaved(false);
     load();
   }, [id]);
+  useEffect(() => {
+    Promise.all([api.categories(), api.accounts()]).then(([c, a]) => {
+      setCategories(c);
+      setAccounts(a);
+    }, (e: Error) => setError(e.message));
+  }, []);
+
+  // a category belongs to the leaves: a split payment is categorized through its items
+  const categorizable = !!d && !d.has_children && ["expense", "transfer", "income"].includes(d.kind);
+  const setCategory = async (choice: Choice) => {
+    setError(null);
+    try {
+      await api.patch(id, choice);
+      await load();
+      onChanged?.();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+  const saveNote = async () => {
+    if (!d || note.trim() === (d.note ?? "")) return;
+    setError(null);
+    try {
+      const t = await api.patch(id, { note: note.trim() || null });
+      setD({ ...d, note: t.note });
+      setNoteSaved(true);
+      onChanged?.();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
 
   // only what the user typed in can be edited; rows from email stay as the bank reported them
   const manual = d?.source === "manual" && d.node_type === "manual";
   const startEdit = async () => {
     if (!d) return;
-    if (accounts.length === 0) setAccounts(await api.accounts());
     const { date, time } = bangkokParts(d.occurred_at);
     setDraft({ date, time, hasTime: d.has_time, amount: String(d.amount), accountId: d.account_id,
                merchant: d.merchant_raw ?? "", description: d.description ?? "" });
@@ -129,11 +168,37 @@ export function TxnDetailPanel({ id, onClose, onChanged }: { id: number; onClose
     rows.push(["ประเภท", CHANNEL_LABEL[d.channel ?? ""] ?? CHANNEL_LABEL[d.node_type] ?? d.channel ?? d.node_type]);
     if (d.description && d.description !== d.channel) rows.push(["รายละเอียด", d.description]);
     rows.push(["สถานะ", STATUS_LABEL[d.status] ?? d.status]);
-    if (d.kind === "expense")
+    if (d.kind === "expense" || d.kind === "transfer" || d.kind === "income")
       rows.push([
-        "หมวด",
+        d.kind === "transfer" ? "โอนไป / หมวด" : "หมวด",
         <>
-          {d.category_th ?? "ยังไม่มี"}
+          {categorizable && categories.length > 0 ? (
+            d.kind === "income" ? (
+              <select value={d.category_id ?? ""} onChange={(e) => setCategory({ category_id: Number(e.target.value) })}>
+                <option value="" disabled>
+                  — เลือกหมวดรายรับ —
+                </option>
+                {categories.filter((c) => c.kind === "income").map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name_th}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <CategorySelect
+                categories={categories}
+                accounts={accounts}
+                fromAccountId={d.account_id}
+                categoryId={d.category_id}
+                transferAccountId={d.kind === "transfer" ? d.counter_account_id : null}
+                onChange={setCategory}
+              />
+            )
+          ) : d.kind === "transfer" ? (
+            d.counter_account_name
+          ) : (
+            d.category_th ?? (d.has_children ? "เลือกหมวดที่รายการย่อย" : "ยังไม่มี")
+          )}
           {CATEGORY_SOURCE_LABEL[d.category_source] && <span className="muted small"> · {CATEGORY_SOURCE_LABEL[d.category_source]}</span>}
           {d.ai_reason && <div className="muted small">{d.ai_reason}</div>}
         </>,
@@ -226,6 +291,26 @@ export function TxnDetailPanel({ id, onClose, onChanged }: { id: number; onClose
         )}
         {d && !draft && (
           <>
+            <label className="note-field">
+              <span className="small muted">โน้ต</span>
+              <textarea
+                rows={2}
+                value={note}
+                placeholder="จดอะไรไว้กับรายการนี้ เช่น ซื้อให้ใคร ใช้ทำอะไร"
+                onChange={(e) => {
+                  setNote(e.target.value);
+                  setNoteSaved(false);
+                }}
+                onBlur={saveNote}
+              />
+              {note.trim() !== (d.note ?? "") ? (
+                <button className="link small" onClick={saveNote}>
+                  บันทึกโน้ต
+                </button>
+              ) : (
+                noteSaved && <span className="small muted">บันทึกแล้ว</span>
+              )}
+            </label>
             <dl className="details">
               {rows.map(([k, v]) => (
                 <div key={k}>

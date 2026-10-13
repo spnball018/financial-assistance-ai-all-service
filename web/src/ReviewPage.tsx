@@ -251,6 +251,7 @@ export function ReviewPage({ categories, accounts }: { categories: Category[]; a
               {depth === 0 && <span className="account">{accountName.get(t.account_id) ?? `บัญชี #${t.account_id}`} · </span>}
               {depth > 0 && t.description ? t.description : CHANNEL_LABEL[t.channel ?? ""] ?? t.channel ?? CHANNEL_LABEL[t.node_type] ?? t.node_type}
             </div>
+            {t.note && <div className="small note">📝 {t.note}</div>}
           </td>
           <td className="c-amount num">{fmtMoney(t.amount)}</td>
           <td className="c-cat">

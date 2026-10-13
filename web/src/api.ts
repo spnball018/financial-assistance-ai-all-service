@@ -88,6 +88,7 @@ export const api = {
       transfer_account_id?: number;
       status?: "pending" | "ignored";
       remember?: boolean;
+      note?: string | null;
       // manual entries only
       amount?: string;
       occurred_at?: string;

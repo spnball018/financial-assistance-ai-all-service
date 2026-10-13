@@ -251,3 +251,9 @@ button.merchant-link:hover { text-decoration: underline; }
 .warn-text { color: var(--warn); }
 .edit-manual { margin: 8px 0 12px; }
 button.link.danger { color: var(--error); }
+.note-field { display: grid; gap: 4px; margin: 8px 0; }
+.note-field textarea { font: inherit; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface); color: var(--text); resize: vertical; }
+.note-field button { justify-self: start; }
+.note { color: var(--ai); }
+.details select { font: inherit; max-width: 100%; }

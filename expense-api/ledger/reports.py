@@ -55,6 +55,7 @@ def expenses(conn, uid: int, month: str, category_id: int) -> list[dict]:
     with all its subcategories. `path` names the payment (and order) a line came from."""
     return [dict(r._mapping) for r in conn.execute(text("""
         SELECT v.id, v.occurred_at, v.has_time, v.amount, v.merchant_raw, v.description, v.node_type,
+               (SELECT note FROM ledger.transactions n WHERE n.id = v.id) AS note,
                v.category_id, k.name_th AS category_th, a.name AS account_name,
                array_remove(ARRAY[g.merchant_raw, p.merchant_raw], NULL) AS path
         FROM ledger.v_reportable_expenses v

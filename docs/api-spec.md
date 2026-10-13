@@ -417,6 +417,7 @@ Response `{"is_set": true, "updated_at": "2026-10-05T07:00:00+00:00"}`
 - `raw` (สิ่งที่ parser อ่านจากอีเมล เช่น `from_account`, `to_account`, `fee`, `balance_after`), `account_name`, `counter_account_name`, `category_th`, `source_ref`, `dedup_key`
 - `ancestors`: รายการแม่จากบนลงล่าง `[{id, node_type, amount, merchant_raw, description}]`
 - `email`: อีเมลที่รายการนี้มาจาก (หรือของรายการแม่ที่ใกล้สุด) `{id, source, subject, sender, received_at, has_html}` หรือ `null`
+- `has_children`: มีรายการย่อย (หมวดเลือกที่รายการย่อย)
 - `orders`: order ของ Shopee/Lazada ที่จับคู่กับรายการนี้ `[{platform, order_id, ordered_at, total_amount, sellers, payment_method}]`
 
 #### ✅ `GET /transactions/{id}/email`
@@ -436,6 +437,7 @@ Response `{"is_set": true, "updated_at": "2026-10-05T07:00:00+00:00"}`
 
 Errors: `404` · `422` หมวดใช้ไม่ได้ หรือเปลี่ยนสถานะไม่ได้
 
+- `note`: โน้ตของผู้ใช้ แก้ได้ทุกรายการทุกสถานะ (ส่ง `""` หรือ `null` เพื่อลบ) แยกจาก `description` ที่เป็นข้อความจากแหล่งข้อมูล
 - **รายการที่บันทึกเอง** (`source = manual`, `node_type = manual`) แก้ `amount`, `occurred_at`, `has_time`, `account_id`, `merchant` ได้เพิ่ม (เช่น ใส่วันโอนผิดจนไปอยู่หลังยอดยกมา) รายการจากอีเมล/บิลได้ `422`
 
 #### ✅ `DELETE /transactions/{id}` → 204

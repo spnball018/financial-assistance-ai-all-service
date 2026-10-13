@@ -25,6 +25,7 @@ export interface Txn {
   ref_transaction_id: number | null;
   receipts: number;
   description: string | null;
+  note: string | null;
   category_id: number | null;
   category_source: CategorySource;
   ai_confidence: number | null;
@@ -40,6 +41,7 @@ export interface TxnDetails extends Omit<Txn, "children"> {
   category_th: string | null;
   source_ref: string | null;
   dedup_key: string;
+  has_children: boolean;
   ancestors: { id: number; node_type: string; amount: number; merchant_raw: string | null; description: string | null }[];
   email: { id: number; source: string; subject: string | null; sender: string | null; received_at: string | null; has_html: boolean } | null;
   orders: { platform: string; order_id: string; ordered_at: string; total_amount: number; sellers: string[] | null; payment_method: string | null }[];
@@ -80,6 +82,7 @@ export interface ReportExpense {
   amount: number;
   merchant_raw: string | null;
   description: string | null;
+  note: string | null;
   node_type: string;
   category_id: number;
   category_th: string;

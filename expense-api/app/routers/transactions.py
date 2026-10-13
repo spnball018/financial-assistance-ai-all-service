@@ -77,6 +77,7 @@ class TransactionPatch(BaseModel):
     description: Optional[str] = None
     status: Optional[Literal["pending", "ignored"]] = None
     remember: Optional[bool] = None
+    note: Optional[str] = None  # the user's own note; empty or null clears it
     # manual entries only: fix what was typed in
     amount: Optional[Decimal] = Field(default=None, gt=0, max_digits=15, decimal_places=2)
     occurred_at: Optional[datetime] = None
@@ -100,7 +101,8 @@ def patch_transaction(txn_id: int, body: TransactionPatch, uid: int = Depends(cu
                                           account_id=body.account_id, merchant=body.merchant))
         return _run(lambda: txns.update(conn, uid, txn_id, category_id=body.category_id,
                                         transfer_account_id=body.transfer_account_id, description=body.description,
-                                        status=body.status, remember=body.remember, fields=fields - manual))
+                                        status=body.status, remember=body.remember, note=body.note,
+                                        fields=fields - manual))
 
 
 @router.delete("/transactions/{txn_id}", status_code=204)
