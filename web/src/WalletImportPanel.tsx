@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import { fmtMoney } from "./format";
+import { shrinkImage } from "./image";
 import type { Account, WalletApplyResult, WalletEntry, WalletEntryKind, WalletScreenshot } from "./types";
 
 const KIND_LABEL: Record<WalletEntryKind, string> = {
@@ -109,7 +110,7 @@ export function WalletImportPanel({ accounts, onClose, onSaved }: {
     if (input.current) input.current.value = "";
     for (const [i, f] of [...files].entries()) {
       try {
-        patch(added[i].key, fromReading(await api.uploadWalletScreenshot(accountId, f)));
+        patch(added[i].key, fromReading(await api.uploadWalletScreenshot(accountId, await shrinkImage(f))));
       } catch (e) {
         patch(added[i].key, { error: (e as Error).message });
       }
