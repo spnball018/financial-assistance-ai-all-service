@@ -36,10 +36,13 @@ def _run(fn):
 async def upload_screenshot(account_id: int, file: UploadFile = File(...),
                             reader: Optional[WalletReader] = Depends(get_reader), uid: int = Depends(current_user_id)):
     """Upload a screenshot of the wallet app's history and read it. The response carries the proposed
-    entries (ocr_result.entries); nothing is recorded until POST /wallet-screenshots/{id}/apply."""
+    entries (ocr_result.entries); nothing is recorded until POST /wallet-screenshots/{id}/apply.
+    The same image again returns the stored screenshot and reading (read again only if that failed)."""
     data = await file.read(MAX_BYTES + 1)
     with get_engine().begin() as conn:
         shot = _run(lambda: service.upload(conn, uid, account_id, data, file.content_type or ""))
+    if shot["ocr_status"] == "done":
+        return shot
     return _run(lambda: service.read(get_engine(), uid, shot["id"], reader))
 
 
@@ -66,6 +69,14 @@ def screenshot_image(shot_id: int, uid: int = Depends(current_user_id)):
 def reread_screenshot(shot_id: int, reader: Optional[WalletReader] = Depends(get_reader),
                       uid: int = Depends(current_user_id)):
     return _run(lambda: service.read(get_engine(), uid, shot_id, reader))
+
+
+@router.delete("/wallet-screenshots/{shot_id}", status_code=204)
+def discard_screenshot(shot_id: int, uid: int = Depends(current_user_id)):
+    """Drop a screenshot that was never recorded."""
+    with get_engine().begin() as conn:
+        _run(lambda: service.discard(conn, uid, shot_id))
+    return Response(status_code=204)
 
 
 class ApplyRequest(BaseModel):

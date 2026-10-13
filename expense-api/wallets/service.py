@@ -71,16 +71,20 @@ def image(conn, uid: int, shot_id: int) -> tuple[bytes, str]:
 
 
 def upload(conn, uid: int, account_id: int, data: bytes, mime_type: str) -> dict:
+    """The same image uploaded again (e.g. after the page was reloaded) returns the stored screenshot and
+    its reading instead of a new one; on another account it is refused."""
     _wallet(conn, uid, account_id)
     if mime_type not in MIME_TYPES:
         raise Invalid(f"unsupported image type {mime_type}; use JPEG, PNG, WebP or HEIC")
     if not data or len(data) > MAX_BYTES:
         raise Invalid("image must be between 1 byte and 10 MB")
     digest = hashlib.sha256(data).hexdigest()
-    existing = conn.execute(text("SELECT id FROM ledger.wallet_screenshots WHERE sha256 = :h AND user_id = :uid"),
-                            {"h": digest, "uid": uid}).scalar()
+    existing = conn.execute(text("SELECT id, account_id FROM ledger.wallet_screenshots WHERE sha256 = :h AND user_id = :uid"),
+                            {"h": digest, "uid": uid}).first()
     if existing:
-        raise Conflict(f"this screenshot is already uploaded as {existing}")
+        if existing.account_id != account_id:
+            raise Conflict(f"this screenshot is already uploaded to another account (screenshot {existing.id})")
+        return get(conn, uid, existing.id)
     rel = storage.save(data, digest, mime_type, datetime.now(timezone.utc), uid)
     sid = conn.execute(text("INSERT INTO ledger.wallet_screenshots (user_id, account_id, storage_uri, mime_type, sha256) "
                             "VALUES (:uid, :a, :u, :m, :h) RETURNING id"),
@@ -181,3 +185,11 @@ def apply(conn, uid: int, shot_id: int, entries: Optional[list[dict]] = None) ->
         out["new" if new_id else "duplicate"] += 1
     conn.execute(text("UPDATE ledger.wallet_screenshots SET applied_at = now() WHERE id = :id"), {"id": shot_id})
     return out
+
+
+def discard(conn, uid: int, shot_id: int) -> None:
+    """Drop a screenshot that was never recorded (the image file may be shared by hash, so it stays)."""
+    shot = get(conn, uid, shot_id)
+    if shot["applied_at"] is not None:
+        raise Invalid("this screenshot was already recorded; change or ignore its rows on the review page")
+    conn.execute(text("DELETE FROM ledger.wallet_screenshots WHERE id = :id AND user_id = :uid"), {"id": shot_id, "uid": uid})

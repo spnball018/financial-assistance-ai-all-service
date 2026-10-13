@@ -52,7 +52,42 @@ export function WalletImportPanel({ accounts, onClose, onSaved }: {
   }, [onClose]);
 
   const patch = (key: string, change: Partial<Shot>) =>
-    setShots((list) => list.map((s) => (s.key === key ? { ...s, ...change } : s)));
+    setShots((list) => {
+      const next = list.map((s) => (s.key === key ? { ...s, ...change } : s));
+      // the same image uploaded twice comes back as the same screenshot: keep one card
+      const id = change.shot?.id;
+      return id === undefined ? next : next.filter((s) => s.key === key || s.shot?.id !== id);
+    });
+
+  // screenshots read earlier but not recorded yet (e.g. the page was reloaded): pick up where we left off
+  useEffect(() => {
+    if (accountId === null) return;
+    api.walletScreenshots(accountId).then((list) => {
+      const pending = list.filter((s) => s.applied_at === null);
+      setShots((cur) => [
+        ...cur.filter((s) => s.shot === null || s.shot.account_id === accountId),
+        ...pending
+          .filter((p) => !cur.some((s) => s.shot?.id === p.id))
+          .map((p) => ({
+            key: `saved-${p.id}`, name: `รูปที่อัปโหลดไว้ #${p.id}`, preview: `/api/wallet-screenshots/${p.id}/image`,
+            shot: null, rows: [], error: null, saving: false, result: null, ...fromReading(p),
+          })),
+      ]);
+    }, () => undefined);
+  }, [accountId]);
+
+  const discard = async (s: Shot) => {
+    if (s.shot && !s.result) {
+      if (!window.confirm("ทิ้งรูปนี้? รายการในรูปจะไม่ถูกบันทึก")) return;
+      try {
+        await api.discardWalletScreenshot(s.shot.id);
+      } catch (e) {
+        patch(s.key, { error: (e as Error).message });
+        return;
+      }
+    }
+    setShots((list) => list.filter((x) => x.key !== s.key));
+  };
 
   const fromReading = (shot: WalletScreenshot): Partial<Shot> =>
     shot.ocr_status === "done"
@@ -226,11 +261,18 @@ export function WalletImportPanel({ accounts, onClose, onSaved }: {
               {s.shot?.ocr_result?.balance != null && (
                 <p className="muted small">ยอดคงเหลือในรูป {fmtMoney(s.shot.ocr_result.balance)}</p>
               )}
-              {s.rows.length > 0 && !s.result && (
-                <button className="primary" disabled={s.saving} onClick={() => save(s)}>
-                  {s.saving ? "กำลังบันทึก…" : `บันทึก ${s.rows.filter((r) => r.include).length} รายการ`}
-                </button>
-              )}
+              <div className="toolbar">
+                {s.rows.length > 0 && !s.result && (
+                  <button className="primary" disabled={s.saving} onClick={() => save(s)}>
+                    {s.saving ? "กำลังบันทึก…" : `บันทึก ${s.rows.filter((r) => r.include).length} รายการ`}
+                  </button>
+                )}
+                {(s.shot || s.error) && (
+                  <button className="link" onClick={() => discard(s)}>
+                    {s.result ? "ซ่อน" : "ทิ้งรูปนี้"}
+                  </button>
+                )}
+              </div>
               {s.result && (
                 <div className="message ok">
                   บันทึกใหม่ {s.result.new} รายการ (รอตรวจ){s.result.duplicate > 0 && ` · มีอยู่แล้ว ${s.result.duplicate}`}

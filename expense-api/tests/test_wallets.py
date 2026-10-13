@@ -127,7 +127,9 @@ def test_only_ewallets_and_cards_duplicates_and_image(api, db):
     assert upload(api, 999999).status_code == 404
     tm = acct(db, "TrueMoney")
     shot = upload(api, tm).json()
-    assert upload(api, tm).status_code == 409
+    again = upload(api, tm)                            # e.g. after reloading the page: same screenshot back
+    assert again.status_code == 201 and again.json()["id"] == shot["id"]
+    assert upload(api, acct(db, "Shopee")).status_code == 409   # the same image on another wallet
     img = api.get(f"/wallet-screenshots/{shot['id']}/image")
     assert img.content == PNG and img.headers["content-type"] == "image/png"
     assert [s["id"] for s in api.get(f"/wallets/{tm}/screenshots").json()] == [shot["id"]]
@@ -136,3 +138,17 @@ def test_only_ewallets_and_cards_duplicates_and_image(api, db):
 def test_without_reader_is_503(api, db):
     app.dependency_overrides[wallets_router.get_reader] = lambda: None
     assert upload(api, acct(db, "TrueMoney")).status_code == 503
+
+
+def test_reupload_does_not_read_again_and_discard_only_unrecorded(api, db):
+    tm = acct(db, "TrueMoney")
+    reader = FakeWalletReader(READING)
+    app.dependency_overrides[wallets_router.get_reader] = lambda: reader
+    first = upload(api, tm).json()
+    upload(api, tm)
+    assert reader.calls == 1
+    other = upload(api, tm, PNG + b"2").json()
+    assert api.delete(f"/wallet-screenshots/{other['id']}").status_code == 204
+    assert [s["id"] for s in api.get(f"/wallets/{tm}/screenshots").json()] == [first["id"]]
+    api.post(f"/wallet-screenshots/{first['id']}/apply", json={})
+    assert api.delete(f"/wallet-screenshots/{first['id']}").status_code == 422

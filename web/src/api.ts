@@ -108,6 +108,8 @@ export const api = {
     form.append("file", file);
     return call<WalletScreenshot>(`/wallets/${accountId}/screenshots`, { method: "POST", body: form });
   },
+  walletScreenshots: (accountId: number) => call<WalletScreenshot[]>(`/wallets/${accountId}/screenshots`),
+  discardWalletScreenshot: (id: number) => noContent(`/wallet-screenshots/${id}`, { method: "DELETE" }),
   rereadWalletScreenshot: (id: number) => call<WalletScreenshot>(`/wallet-screenshots/${id}/read`, { method: "POST" }),
   applyWalletScreenshot: (id: number, entries: WalletEntry[]) =>
     call<WalletApplyResult>(`/wallet-screenshots/${id}/apply`, { method: "POST", body: JSON.stringify({ entries }) }),

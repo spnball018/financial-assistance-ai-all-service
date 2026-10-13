@@ -326,7 +326,7 @@ Response `200`: `{"removed": 2}` · `404` ไม่มีรายการ · `
 wallet หรือบัตรเครดิต (`ewallet` / `credit_card`) เป็นบัญชีที่มีรายการของตัวเอง แบบเดียวกับบัตร KTC แต่ข้อมูลมาจากรูปหน้าจอประวัติรายการในแอป สำหรับบัตร การชำระบัตรนับเป็น `top_up` (จับคู่กับรายการธนาคารที่ชื่อผู้รับเข้ากับผู้ออกบัตร เช่น Bangkok Bank: `bangkok ?bank|ธนาคารกรุงเทพ|bualuang|บัวหลวง`) อ่านด้วย Gemini vision (ตั้งค่าเดียวกับใบเสร็จ ไม่มี key ได้ `503`) รูปเก็บใน `RECEIPTS_DIR` เหมือนใบเสร็จ
 
 #### ✅ `POST /wallets/{account_id}/screenshots` (multipart `file`) → 201
-อัปโหลดแล้วอ่านทันที ยังไม่บันทึกรายการ บัญชีต้องเป็น `ewallet` หรือ `credit_card` (`422`), รูปเดิมซ้ำได้ `409`
+อัปโหลดแล้วอ่านทันที ยังไม่บันทึกรายการ บัญชีต้องเป็น `ewallet` หรือ `credit_card` (`422`) · รูปเดิมซ้ำในบัญชีเดียวกันได้รูปเดิมพร้อมผลที่อ่านไว้คืนมา (ไม่อ่านใหม่ถ้าเคยอ่านสำเร็จ) ใช้ทำต่อหลัง reload หน้า · รูปเดิมในบัญชีอื่นได้ `409`
 ```json
 {"id": 3, "account_id": 10, "ocr_status": "done", "applied_at": null,
  "ocr_result": {"balance": 310.0, "entries": [
@@ -339,6 +339,10 @@ wallet หรือบัตรเครดิต (`ewallet` / `credit_card`) �
 - อ่านได้ทั้งภาพหน้าจอและภาพถ่ายหน้าจอโทรศัพท์ (ทดสอบกับภาพถ่ายแอป TrueMoney 4 รูป: 2026-10-12)
 
 #### ✅ `GET /wallets/{account_id}/screenshots` · `GET /wallet-screenshots/{id}` · `GET /wallet-screenshots/{id}/image` · `POST /wallet-screenshots/{id}/read`
+`GET /wallets/{account_id}/screenshots`: หน้าเว็บใช้โหลดรูปที่ `applied_at` ยังว่าง (อ่านแล้วแต่ยังไม่บันทึก) กลับมาตอนเปิดหน้านำเข้า
+
+#### ✅ `DELETE /wallet-screenshots/{id}` → 204
+ทิ้งรูปที่ยังไม่ได้บันทึก รูปที่บันทึกแล้วได้ `422`
 
 #### ✅ `POST /wallet-screenshots/{id}/apply`
 Body `{"entries": [...]}` (รายการที่ผู้ใช้แก้แล้ว ใช้ตามนั้น) หรือ `{}` ใช้ผลที่อ่านได้ โดยข้ามแถว `date_shown: false` และแถวยอด 0 รันซ้ำได้
