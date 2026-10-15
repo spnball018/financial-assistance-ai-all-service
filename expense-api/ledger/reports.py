@@ -66,3 +66,17 @@ def expenses(conn, uid: int, month: str, category_id: int) -> list[dict]:
         WHERE v.user_id = :uid AND (k.id = :c OR k.parent_id = :c)
           AND to_char(v.occurred_at AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM') = :m
         ORDER BY v.amount DESC, v.occurred_at DESC"""), {"uid": uid, "c": category_id, "m": month})]
+
+
+def income(conn, uid: int, month: str) -> list[dict]:
+    """The confirmed incomes behind the summary's income total, largest first."""
+    return [dict(r._mapping) for r in conn.execute(text("""
+        SELECT t.id, t.occurred_at, t.has_time, t.amount, t.merchant_raw, t.description, t.node_type, t.note,
+               t.source, t.category_id, k.name_th AS category_th, a.name AS account_name
+        FROM ledger.transactions t
+        LEFT JOIN ledger.categories k ON k.id = t.category_id
+        JOIN ledger.accounts a ON a.id = t.account_id
+        WHERE t.user_id = :uid AND t.status = 'confirmed' AND t.kind = 'income'
+          AND NOT EXISTS (SELECT 1 FROM ledger.transactions c WHERE c.parent_id = t.id)
+          AND to_char(t.occurred_at AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM') = :m
+        ORDER BY t.amount DESC, t.occurred_at DESC"""), {"uid": uid, "m": month})]

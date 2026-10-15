@@ -149,6 +149,13 @@ def report_expenses(month: str, category_id: int, uid: int = Depends(current_use
         return reports.expenses(conn, uid, _month(month), category_id)
 
 
+@router.get("/reports/income")
+def report_income(month: str, uid: int = Depends(current_user_id)):
+    """Confirmed incomes behind the summary's income total."""
+    with get_engine().connect() as conn:
+        return reports.income(conn, uid, _month(month))
+
+
 @router.get("/reports/summary")
 def summary(month: str, uid: int = Depends(current_user_id)):
     with get_engine().connect() as conn:

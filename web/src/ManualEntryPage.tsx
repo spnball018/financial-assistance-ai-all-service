@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { api } from "./api";
 import { fmtMoney, fmtWhen } from "./format";
+import { TxnDetailPanel } from "./TxnDetailPanel";
 import type { Account, Category, Txn } from "./types";
 
 function nowInBangkok(): { date: string; time: string } {
@@ -29,6 +30,13 @@ export function ManualEntryPage({ categories, accounts }: { categories: Category
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<Txn[]>([]);
+  const [detailId, setDetailId] = useState<number | null>(null);
+  // after an edit or delete in the detail panel: show the row as it is now
+  const refreshSaved = (id: number) =>
+    api.txnDetails(id).then(
+      (t) => setSaved((prev) => prev.map((x) => (x.id === id ? { ...x, ...t } : x))),
+      () => setSaved((prev) => prev.filter((x) => x.id !== id)),
+    );
 
   const active = accounts.filter((a) => a.is_active);
   const catName = (id: number | null) => categories.find((c) => c.id === id)?.name_th ?? "";
@@ -186,21 +194,26 @@ export function ManualEntryPage({ categories, accounts }: { categories: Category
       {saved.length > 0 && (
         <>
           <h2>บันทึกแล้วรอบนี้</h2>
-          <ul className="subs saved-list">
+          <ul className="expenses saved-list">
             {saved.map((t) => (
               <li key={t.id}>
-                <span>
-                  {t.kind === "transfer"
-                    ? `โอน → ${accountName(t.counter_account_id)}`
-                    : `${t.kind === "income" ? "รายรับ" : "รายจ่าย"} · ${catName(t.category_id)}`}
-                  {t.merchant_raw ? ` · ${t.merchant_raw}` : ""}
-                  <span className="muted small"> · {fmtWhen(t.occurred_at, t.has_time)}</span>
-                </span>
-                <span className="num">{fmtMoney(t.amount)}</span>
+                <button onClick={() => setDetailId(t.id)} title="ดูรายละเอียด / แก้ไข">
+                  <span>
+                    {t.kind === "transfer"
+                      ? `โอน ${accountName(t.account_id)} → ${accountName(t.counter_account_id)}`
+                      : `${t.kind === "income" ? "รายรับ" : "รายจ่าย"} · ${catName(t.category_id)} · ${accountName(t.account_id)}`}
+                    {t.merchant_raw ? ` · ${t.merchant_raw}` : ""}
+                    <span className="muted small"> · {fmtWhen(t.occurred_at, t.has_time)}</span>
+                  </span>
+                  <span className="num">{fmtMoney(t.amount)}</span>
+                </button>
               </li>
             ))}
           </ul>
         </>
+      )}
+      {detailId !== null && (
+        <TxnDetailPanel id={detailId} onClose={() => setDetailId(null)} onChanged={() => refreshSaved(detailId)} />
       )}
     </section>
   );

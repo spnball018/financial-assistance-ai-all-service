@@ -161,6 +161,11 @@ def test_manual_income_and_monthly_net(api, db):
     t = r.json()["id"]
     assert api.patch(f"/transactions/{t}", json={"category_id": cat(db, "Freelance")}).json()["kind"] == "income"
     assert api.patch(f"/transactions/{t}", json={"transfer_account_id": 3}).status_code == 422
+    # the income list behind the summary, and a manual income moved to the right account
+    inc = api.get("/reports/income", params={"month": "2026-09"}).json()
+    assert [(x["id"], x["account_name"] is not None, x["source"]) for x in inc] == [(t, True, "manual")]
+    assert api.patch(f"/transactions/{t}", json={"account_id": 3}).json()["account_id"] == 3
+    assert api.get("/reports/income", params={"month": "2026-08"}).json() == []
 
 
 def test_manual_transfer_between_own_accounts(api, db):

@@ -1,4 +1,4 @@
-import type { Account, AccountInput, AccountLedger, ApiToken, Balance, Category, CreatedApiToken, EmailSource, GmailStatus, Me, MerchantRule, User, Receipt, TransferMatch, ConfirmResult, Status, Summary, SyncResult, Txn, TxnDetails, ReportExpense, WalletApplyResult, WalletEntry, WalletScreenshot } from "./types";
+import type { Account, AccountInput, AccountLedger, ApiToken, Balance, Category, CreatedApiToken, EmailSource, GmailStatus, Me, MerchantRule, User, Receipt, TransferMatch, ConfirmResult, Status, Summary, SyncResult, Txn, TxnDetails, ReportExpense, ReportIncome, WalletApplyResult, WalletEntry, WalletScreenshot } from "./types";
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -144,6 +144,7 @@ export const api = {
   summary: (month: string) => call<Summary>(`/reports/summary?month=${month}`),
   reportExpenses: (month: string, categoryId: number) =>
     call<ReportExpense[]>(`/reports/expenses?month=${month}&category_id=${categoryId}`),
+  reportIncome: (month: string) => call<ReportIncome[]>(`/reports/income?month=${month}`),
   txnDetails: (id: number) => call<TxnDetails>(`/transactions/${id}/details`),
   txnEmail: async (id: number) => (await send(`/transactions/${id}/email`)).text(),
 };

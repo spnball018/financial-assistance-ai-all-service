@@ -99,6 +99,20 @@ export interface ReportExpense {
   path: string[];
 }
 
+export interface ReportIncome {
+  id: number;
+  occurred_at: string;
+  has_time: boolean;
+  amount: number;
+  merchant_raw: string | null;
+  description: string | null;
+  note: string | null;
+  source: string;
+  category_id: number | null;
+  category_th: string | null;
+  account_name: string;
+}
+
 export interface Category {
   id: number;
   parent_id: number | null;

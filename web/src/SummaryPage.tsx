@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "./api";
 import { fmtMoney, fmtWhen, thisMonth } from "./format";
 import { TxnDetailPanel } from "./TxnDetailPanel";
-import type { ReportExpense, Summary } from "./types";
+import type { ReportExpense, ReportIncome, Summary } from "./types";
 
 export function SummaryPage() {
   const [month, setMonth] = useState(thisMonth());
@@ -11,10 +11,12 @@ export function SummaryPage() {
   const [open, setOpen] = useState<number | null>(null); // expanded category
   const [rows, setRows] = useState<ReportExpense[] | null>(null);
   const [detailId, setDetailId] = useState<number | null>(null);
+  const [income, setIncome] = useState<ReportIncome[] | null>(null); // the income list, when shown
 
   useEffect(() => {
     setError(null);
     setOpen(null);
+    setIncome(null);
     api.summary(month).then(setData, (e: Error) => setError(e.message));
   }, [month]);
 
@@ -26,6 +28,14 @@ export function SummaryPage() {
     setOpen(categoryId);
     setRows(null);
     api.reportExpenses(month, categoryId).then(setRows, (e: Error) => setError(e.message));
+  };
+
+  const toggleIncome = () => {
+    if (income !== null) {
+      setIncome(null);
+      return;
+    }
+    api.reportIncome(month).then(setIncome, (e: Error) => setError(e.message));
   };
 
   const max = Math.max(1, ...(data?.categories.map((c) => c.amount) ?? [1]));
@@ -55,12 +65,40 @@ export function SummaryPage() {
               <div className="muted small">
                 {data.income.categories.map((c) => `${c.name_th ?? "ไม่ระบุ"} ${fmtMoney(c.amount)}`).join(" · ") || "ยังไม่มี"}
               </div>
+              {data.income.categories.length > 0 && (
+                <button className="link small" onClick={toggleIncome} aria-expanded={income !== null}>
+                  {income !== null ? "▾ ซ่อนรายการ" : "▸ ดูรายการ / แก้ไข"}
+                </button>
+              )}
             </div>
             <div className="total-card">
               <div className="muted small">คงเหลือสุทธิ (รายรับ − รายจ่าย)</div>
               <div className={`total ${data.net < 0 ? "neg" : ""}`}>{fmtMoney(data.net)}</div>
             </div>
           </div>
+          {income !== null && (
+            <div className="transfers">
+              <h2>รายรับเดือนนี้</h2>
+              <ul className="expenses">
+                {income.length === 0 && <li className="muted">ไม่มีรายการ</li>}
+                {income.map((r) => (
+                  <li key={r.id}>
+                    <button onClick={() => setDetailId(r.id)}>
+                      <span>
+                        {r.merchant_raw ?? "—"}
+                        <span className="muted small">
+                          {" "}
+                          · {fmtWhen(r.occurred_at, r.has_time)} · {r.account_name} · {r.category_th ?? "ไม่ระบุหมวด"}
+                        </span>
+                        {r.note && <span className="small note"> 📝 {r.note}</span>}
+                      </span>
+                      <span className="num">{fmtMoney(r.amount)}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           {data.categories.length === 0 && <p className="muted">ยังไม่มีรายการที่ยืนยันในเดือนนี้</p>}
           <ul className="bars">
             {data.categories.map((g) => (
@@ -137,6 +175,7 @@ export function SummaryPage() {
           onChanged={() => {
             api.summary(month).then(setData, (e: Error) => setError(e.message));
             if (open !== null) api.reportExpenses(month, open).then(setRows, (e: Error) => setError(e.message));
+            if (income !== null) api.reportIncome(month).then(setIncome, (e: Error) => setError(e.message));
           }}
         />}
     </section>

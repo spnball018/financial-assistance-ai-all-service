@@ -511,7 +511,7 @@ Response `201`: รายการที่สร้าง · `422` ยอดไ
 - หมวดหลักเรียงตามยอดมากไปน้อย หมวดที่ไม่มีหมวดย่อย (เช่น บริจาค, Uncategorized) จะมี `subcategories` ว่าง
 - `pending_not_counted`: จำนวนรายการ root ที่ยัง pending ในเดือนนั้น (ยังไม่นับในยอด)
 - `income`: รายรับที่ confirm แล้ว แยกตามหมวด (`{"total": 8000.0, "categories": [{"category_id": 31, "name_th": "ค่าเช่า", "name_en": "Rental Income", "count": 1, "amount": 8000.0}]}`) และ `net` = รายรับ − รายจ่าย
-- กดหมวดในหน้าสรุปเพื่อดูรายการ: `GET /reports/expenses`
+- กดหมวดในหน้าสรุปเพื่อดูรายการ: `GET /reports/expenses` · กดการ์ดรายรับ: `GET /reports/income`
 - `transfers_out`: ยอดที่ confirm แล้วว่าโอนเข้าบัญชีตัวเอง แยกตามบัญชีปลายทาง แสดงให้เห็นว่าเงินไปไหน แต่ไม่รวมใน `total`
   ```json
   "transfers_out": [{"account_id": 10, "name": "TrueMoney", "count": 2, "amount": 1800.0}]
@@ -526,6 +526,15 @@ Response `201`: รายการที่สร้าง · `422` ยอดไ
   "category_th": "งานอดิเรก/เครื่องเขียน", "account_name": "KBank ใช้จ่าย", "path": ["SHOPEEPAY", "Shopee · camppao"]}]
 ```
 `path`: รายการแม่ (สูงสุด 2 ชั้น) ที่รายการนี้แยกออกมา · `422` เดือนผิดรูปแบบ
+
+#### ✅ `GET /reports/income?month=YYYY-MM`
+รายรับที่ confirm แล้วของเดือน (รายการที่อยู่เบื้องหลัง `income.total` ในสรุป) เรียงตามยอดมากไปน้อย หน้าเว็บกดแต่ละรายการเพื่อเปิดรายละเอียด (รายรับที่บันทึกเองแก้บัญชี/ยอด/เวลาได้)
+```json
+[{"id": 512, "occurred_at": "2026-10-01T02:00:00Z", "has_time": true, "amount": 8000.0, "merchant_raw": "ผู้เช่าห้อง",
+  "description": null, "node_type": "manual", "note": null, "source": "manual", "category_id": 31,
+  "category_th": "ค่าเช่า", "account_name": "KBank ออม"}]
+```
+`category_id` / `category_th` เป็น `null` ได้ · `422` เดือนผิดรูปแบบ
 ---
 
 ## gmail-service (`localhost:8000`)
