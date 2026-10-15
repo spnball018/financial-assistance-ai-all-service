@@ -282,3 +282,8 @@ table.ledger tr.gap td { background: var(--warn-bg); }
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2.4s; } }
+.steps { margin-bottom: 8px; }
+.steps ol { list-style: none; display: flex; flex-wrap: wrap; gap: 4px 14px; padding: 0; margin: 0 0 2px; font-size: 13px; }
+.steps li { color: var(--muted); }
+.steps li.done { color: var(--accent); }
+.steps li.current { color: var(--text); font-weight: 600; }

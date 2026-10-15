@@ -108,9 +108,11 @@ export const api = {
     const form = new FormData();
     form.append("file", file);
     // the server only stores the image and queues the reading, so this is quick unless the network is stuck
-    return call<WalletScreenshot>(`/wallets/${accountId}/screenshots`, {
-      method: "POST", body: form, signal: AbortSignal.timeout(60_000),
-    });
+    // (AbortController + setTimeout: AbortSignal.timeout is missing on older iOS Safari)
+    const abort = new AbortController();
+    const timer = setTimeout(() => abort.abort(new DOMException("upload timed out", "TimeoutError")), 60_000);
+    return call<WalletScreenshot>(`/wallets/${accountId}/screenshots`, { method: "POST", body: form, signal: abort.signal })
+      .finally(() => clearTimeout(timer));
   },
   walletScreenshot: (id: number) => call<WalletScreenshot>(`/wallet-screenshots/${id}`),
   walletScreenshots: (accountId: number) => call<WalletScreenshot[]>(`/wallets/${accountId}/screenshots`),

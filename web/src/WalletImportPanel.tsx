@@ -43,6 +43,8 @@ type Shot = {
   name: string;
   preview: string;
   phase: "shrinking" | "uploading" | null; // in the browser, before the server has the image
+  bytes: number | null; // what is being uploaded, after shrinking
+  phaseAt: number; // when the browser-side phase started (Date.now())
   shot: WalletScreenshot | null;
   rows: Row[];
   error: string | null;
@@ -62,20 +64,34 @@ const fromReading = (shot: WalletScreenshot): Partial<Shot> =>
       ? { shot, rows: [], error: null }
       : { shot, rows: [], error: `อ่านรูปไม่สำเร็จ: ${OCR_ERROR[shot.ocr_error ?? ""] ?? shot.ocr_error ?? "ไม่ทราบสาเหตุ"}` };
 
-/** What is happening to a screenshot that is not read yet, e.g. "AI กำลังอ่านรูป (ครั้งที่ 2/4) · 25 วินาที". */
-function progressText(s: Shot, now: number): string | null {
-  if (s.phase === "shrinking") return "ย่อขนาดรูป…";
-  if (s.phase === "uploading") return "กำลังอัปโหลด…";
+// a photo the browser could not shrink is sent as it is only when small; a big one through the tunnel is slow
+const MAX_UNSHRUNK = 3 * 1024 * 1024;
+const fmtSize = (n: number) => (n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
+
+const STEPS = ["กำลังย่อรูป", "กำลังส่งรูป", "รอ OCR", "OCR กำลังอ่าน", "บันทึกผล"];
+
+/** Where a screenshot that is not read yet is: the step (index into STEPS) and a detail line,
+ * e.g. step 3, "ครั้งที่ 2/4 · 25 วินาที". */
+function progress(s: Shot, now: number): { step: number; detail: string } | null {
+  const secs = (since: number) => `${Math.max(0, Math.round((now - since) / 1000))} วินาที`;
+  if (s.phase === "shrinking") return { step: 0, detail: secs(s.phaseAt) };
+  if (s.phase === "uploading")
+    return { step: 1, detail: `${s.bytes === null ? "" : `${fmtSize(s.bytes)} · `}${secs(s.phaseAt)}` };
   const p = s.shot?.ocr_status === "pending" ? s.shot.ocr_progress : null;
   if (!p) return null;
-  const tries = (n?: number) => (p.attempts && p.attempts > 1 && n && n > 1 ? ` (ครั้งที่ ${n}/${p.attempts})` : "");
-  const step =
-    p.stage === "queued" ? "รอคิว (อ่านพร้อมกันได้ 2 รูป)"
-    : p.stage === "reading" ? `AI กำลังอ่านรูป${tries(p.attempt)}`
-    : p.stage === "retry" ? `${RETRY_REASON[p.reason ?? ""] ?? "อ่านไม่สำเร็จ"} รอ ${p.wait} วินาทีแล้วลองใหม่${tries((p.attempt ?? 0) + 1)}`
-    : "บันทึกผลที่อ่านได้";
-  const secs = Math.max(0, Math.round((now - Date.parse(p.since)) / 1000));
-  return `${step} · ${secs} วินาที`;
+  const elapsed = secs(Date.parse(p.since));
+  const tries = (n?: number) => (p.attempts && p.attempts > 1 && n && n > 1 ? `ครั้งที่ ${n}/${p.attempts} · ` : "");
+  switch (p.stage) {
+    case "queued":
+      return { step: 2, detail: `รอคิว อ่านพร้อมกันได้ 2 รูป · ${elapsed}` };
+    case "reading":
+      return { step: 3, detail: `${tries(p.attempt)}${elapsed}` };
+    case "retry":
+      return { step: 3, detail: `${RETRY_REASON[p.reason ?? ""] ?? "อ่านไม่สำเร็จ"} รอ ${p.wait} วินาทีแล้วลองใหม่ `
+        + `(ครั้งที่ ${(p.attempt ?? 0) + 1}/${p.attempts}) · ${elapsed}` };
+    default:
+      return { step: 4, detail: elapsed };
+  }
 }
 
 /** Upload screenshots of a wallet app's history, check what was read, then record it. */
@@ -116,11 +132,21 @@ export function WalletImportPanel({ accounts, onClose, onSaved }: {
   }, [busy]);
   useEffect(() => {
     if (pendingIds === "") return;
+    const failures = new Map<number, number>(); // consecutive failed polls per screenshot
     const poll = window.setInterval(() => {
       for (const id of pendingIds.split(",").map(Number)) {
         api.walletScreenshot(id).then(
-          (shot) => setShots((list) => list.map((s) => (s.shot?.id === id && !s.result ? { ...s, ...fromReading(shot) } : s))),
-          () => undefined,
+          (shot) => {
+            failures.delete(id);
+            setShots((list) => list.map((s) => (s.shot?.id === id && !s.result ? { ...s, ...fromReading(shot) } : s)));
+          },
+          (e: Error) => {
+            failures.set(id, (failures.get(id) ?? 0) + 1);
+            // ~15 s of failures: say so instead of looking busy forever (the reading may still finish)
+            if (failures.get(id) === 10)
+              setShots((list) => list.map((s) => (s.shot?.id === id
+                ? { ...s, error: `ติดต่อเซิร์ฟเวอร์ไม่ได้ (${e.message}) ลองกด อ่านใหม่ หรือเปิดหน้านี้ใหม่` } : s)));
+          },
         );
       }
     }, 1500);
@@ -138,7 +164,7 @@ export function WalletImportPanel({ accounts, onClose, onSaved }: {
           .filter((p) => !cur.some((s) => s.shot?.id === p.id))
           .map((p) => ({
             key: `saved-${p.id}`, name: `รูปที่อัปโหลดไว้ #${p.id}`, preview: `/api/wallet-screenshots/${p.id}/image`,
-            phase: null, shot: null, rows: [], error: null, saving: false, result: null, ...fromReading(p),
+            phase: null, bytes: null, phaseAt: 0, shot: null, rows: [], error: null, saving: false, result: null, ...fromReading(p),
           })),
       ]);
     }, () => undefined);
@@ -160,7 +186,7 @@ export function WalletImportPanel({ accounts, onClose, onSaved }: {
   const onFiles = async (files: FileList | null) => {
     if (!files || accountId === null) return;
     const added: Shot[] = [...files].map((f, i) => ({
-      key: `${Date.now()}-${i}`, name: f.name, preview: URL.createObjectURL(f), phase: "shrinking", shot: null,
+      key: `${Date.now()}-${i}`, name: f.name, preview: URL.createObjectURL(f), phase: "shrinking", bytes: null, phaseAt: Date.now(), shot: null,
       rows: [], error: null, saving: false, result: null,
     }));
     setShots((list) => [...list, ...added]);
@@ -169,11 +195,17 @@ export function WalletImportPanel({ accounts, onClose, onSaved }: {
     for (const [i, f] of [...files].entries()) {
       try {
         const small = await shrinkImage(f);
-        patch(added[i].key, { phase: "uploading" });
+        if (small === f && f.size > MAX_UNSHRUNK) {
+          patch(added[i].key, { phase: null,
+            error: `ย่อรูปไม่ได้ (รูป ${fmtSize(f.size)} เบราว์เซอร์อาจเปิดไฟล์แบบนี้ไม่ได้ เช่น HEIC) ลองแคปหน้าจอเป็น PNG/JPG แทน` });
+          continue;
+        }
+        patch(added[i].key, { phase: "uploading", bytes: small.size, phaseAt: Date.now() });
         patch(added[i].key, { phase: null, ...fromReading(await api.uploadWalletScreenshot(accountId, small)) });
       } catch (e) {
         const err = e as Error;
-        const msg = err.name === "TimeoutError" ? "อัปโหลดไม่เสร็จใน 60 วินาที ลองเลือกรูปใหม่" : err.message;
+        const msg = err.name === "TimeoutError" || err.name === "AbortError"
+          ? "อัปโหลดไม่เสร็จใน 60 วินาที ลองเลือกรูปใหม่" : err.message;
         patch(added[i].key, { phase: null, error: `อัปโหลดไม่สำเร็จ: ${msg}` });
       }
     }
@@ -257,11 +289,21 @@ export function WalletImportPanel({ accounts, onClose, onSaved }: {
           <div key={s.key} className="wallet-shot">
             <img src={s.preview} alt={s.name} />
             <div className="wallet-shot-body">
-              {progressText(s, now) && (
-                <p className="muted">
-                  <span className="spinner" aria-hidden="true" /> {progressText(s, now)}
-                </p>
-              )}
+              {(() => {
+                const p = progress(s, now);
+                return p && (
+                  <div className="steps" role="status">
+                    <ol>
+                      {STEPS.map((label, i) => (
+                        <li key={label} className={i < p.step ? "done" : i === p.step ? "current" : undefined}>
+                          {i < p.step ? "✓ " : i === p.step ? <span className="spinner" aria-hidden="true" /> : null} {label}
+                        </li>
+                      ))}
+                    </ol>
+                    <div className="muted small">{p.detail}</div>
+                  </div>
+                );
+              })()}
               {s.error && (
                 <div className="message error">
                   {s.error}{" "}
