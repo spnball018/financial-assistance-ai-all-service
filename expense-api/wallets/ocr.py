@@ -2,7 +2,7 @@
 Same shape as receipts/ocr.py."""
 import os
 import time
-from typing import Literal, Optional, Protocol
+from typing import Callable, Literal, Optional, Protocol
 
 from pydantic import BaseModel
 
@@ -27,10 +27,15 @@ class WalletReading(BaseModel):
     balance: Optional[float] = None  # wallet balance if the screenshot shows it
 
 
+# progress(stage, **detail): "reading" (attempt, attempts) before each call to the model, "retry" (attempt,
+# attempts, wait seconds, reason rate_limit | server | timeout) before waiting to try again
+Progress = Callable[..., None]
+
+
 class WalletReader(Protocol):
     model: str
 
-    def read(self, image: bytes, mime_type: str, wallet: str) -> WalletReading: ...
+    def read(self, image: bytes, mime_type: str, wallet: str, progress: Optional[Progress] = None) -> WalletReading: ...
 
 
 _PROMPT = """This is a screenshot, or a photo of a phone screen, from the {wallet} app (Thailand):
@@ -58,30 +63,45 @@ Give the wallet balance only if it is shown."""
 
 
 class GeminiWalletReader:
-    def __init__(self, client, model: Optional[str] = None, *, retries: int = 4, backoff: float = 3.0):
+    def __init__(self, client, model: Optional[str] = None, *, retries: int = 4, backoff: float = 3.0,
+                 timeout: float = 60.0):
         self._client = client
         self.model = model or os.environ.get("RECEIPT_MODEL") or os.environ.get("GEMINI_MODEL", "gemini-3.5-flash-lite")
         self._retries = retries
         self._backoff = backoff
+        self._timeout = timeout  # seconds per call: without it a stuck call never returns
 
-    def read(self, image, mime_type, wallet):
+    def read(self, image, mime_type, wallet, progress=None):
+        import httpx
         from google.genai import errors, types
 
+        progress = progress or (lambda stage, **detail: None)
         contents = [types.Part.from_bytes(data=image, mime_type=mime_type), _PROMPT.format(wallet=wallet)]
         config = types.GenerateContentConfig(
             response_mime_type="application/json", response_schema=WalletReading, temperature=0,
-            automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True))
+            automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
+            http_options=types.HttpOptions(timeout=int(self._timeout * 1000)))
         for attempt in range(self._retries):
+            progress("reading", attempt=attempt + 1, attempts=self._retries)
             try:
                 resp = self._client.models.generate_content(model=self.model, contents=contents, config=config)
                 if resp.parsed is None:
                     raise ValueError("model returned no structured reading")
                 return resp.parsed
-            except (errors.ServerError, errors.ClientError) as e:
-                retryable = isinstance(e, errors.ServerError) or getattr(e, "code", None) == 429
-                if not retryable or attempt == self._retries - 1:
+            except (errors.ServerError, errors.ClientError, httpx.TimeoutException) as e:
+                if isinstance(e, httpx.TimeoutException):
+                    reason = "timeout"
+                elif isinstance(e, errors.ServerError):
+                    reason = "server"
+                elif getattr(e, "code", None) == 429:
+                    reason = "rate_limit"
+                else:
                     raise
-                time.sleep(self._backoff * 2 ** attempt)
+                if attempt == self._retries - 1:
+                    raise
+                wait = self._backoff * 2 ** attempt
+                progress("retry", attempt=attempt + 1, attempts=self._retries, wait=wait, reason=reason)
+                time.sleep(wait)
         raise RuntimeError("unreachable")
 
 
@@ -100,6 +120,8 @@ class FakeWalletReader:
         self.reading = reading
         self.calls = 0
 
-    def read(self, image, mime_type, wallet):
+    def read(self, image, mime_type, wallet, progress=None):
         self.calls += 1
+        if progress:
+            progress("reading", attempt=1, attempts=1)
         return self.reading

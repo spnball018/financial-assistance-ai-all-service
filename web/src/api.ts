@@ -107,8 +107,12 @@ export const api = {
   uploadWalletScreenshot: (accountId: number, file: File) => {
     const form = new FormData();
     form.append("file", file);
-    return call<WalletScreenshot>(`/wallets/${accountId}/screenshots`, { method: "POST", body: form });
+    // the server only stores the image and queues the reading, so this is quick unless the network is stuck
+    return call<WalletScreenshot>(`/wallets/${accountId}/screenshots`, {
+      method: "POST", body: form, signal: AbortSignal.timeout(60_000),
+    });
   },
+  walletScreenshot: (id: number) => call<WalletScreenshot>(`/wallet-screenshots/${id}`),
   walletScreenshots: (accountId: number) => call<WalletScreenshot[]>(`/wallets/${accountId}/screenshots`),
   discardWalletScreenshot: (id: number) => noContent(`/wallet-screenshots/${id}`, { method: "DELETE" }),
   rereadWalletScreenshot: (id: number) => call<WalletScreenshot>(`/wallet-screenshots/${id}/read`, { method: "POST" }),

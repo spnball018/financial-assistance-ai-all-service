@@ -2,7 +2,8 @@
 like a card statement: the wallet/card is an account with its own rows, and money moved into it from the
 bank (a top-up, or paying the card) is a transfer, not spending.
 
-upload -> read (vision model proposes entries) -> apply (the user may edit the entries first):
+upload -> read (vision model proposes entries, in the background: start_read queues it, ocr_progress tells
+the page where it is) -> apply (the user may edit the entries first):
 - out (payment, transfer to a person): a pending expense on the wallet account
 - in (refund, cashback, transfer from a person): a pending income on the wallet account
 - top_up (or a payment to the card): no row of its own. It is matched to the bank row that paid it (payee
@@ -14,10 +15,11 @@ list from the user is taken as it is.
 """
 import hashlib
 import json
+import logging
 import re
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from typing import Optional
+from typing import Callable, Optional
 
 from sqlalchemy import text
 
@@ -33,9 +35,22 @@ KIND_LABEL = {"payment": "จ่ายเงิน", "transfer_out": "โอน�
 # how the bank names the wallet or card issuer when it is paid; others fall back to their institution/name
 TOPUP_PAYEE = {"truemoney": r"true ?money", "bangkokbank": r"bangkok ?bank|ธนาคารกรุงเทพ|bualuang|บัวหลวง"}
 ACCOUNT_TYPES = {"ewallet": "e-wallet", "credit_card": "credit card"}
+# a reading whose progress has not moved for this long is taken as dead (the server restarted, ...): it shows
+# as failed ("Stalled") and can be read again. One model call times out after 60 s, retries wait at most 12 s.
+STALL = timedelta(minutes=3)
+
+log = logging.getLogger(__name__)
 
 _COLS = ("id, account_id, storage_uri, mime_type, sha256, uploaded_at, ocr_status, ocr_result, ocr_model, ocr_error, "
-         "applied_at")
+         "ocr_progress, ocr_progress_at, applied_at")
+
+
+def _present(row) -> dict:
+    s = dict(row._mapping)
+    if s["ocr_status"] == "pending" and (
+            s["ocr_progress_at"] is None or s["ocr_progress_at"] < datetime.now(timezone.utc) - STALL):
+        s["ocr_status"], s["ocr_error"] = "failed", "Stalled"
+    return s
 
 
 def _wallet(conn, uid: int, account_id: int):
@@ -53,11 +68,11 @@ def get(conn, uid: int, shot_id: int) -> dict:
                      {"id": shot_id, "uid": uid}).first()
     if r is None:
         raise NotFound(shot_id)
-    return dict(r._mapping)
+    return _present(r)
 
 
 def list_for_account(conn, uid: int, account_id: int) -> list[dict]:
-    return [dict(r._mapping) for r in conn.execute(text(
+    return [_present(r) for r in conn.execute(text(
         f"SELECT {_COLS} FROM ledger.wallet_screenshots WHERE user_id = :uid AND account_id = :a ORDER BY id DESC"),
         {"uid": uid, "a": account_id})]
 
@@ -92,24 +107,66 @@ def upload(conn, uid: int, account_id: int, data: bytes, mime_type: str) -> dict
     return get(conn, uid, sid)
 
 
+def start_read(engine, uid: int, shot_id: int, reader: Optional[WalletReader], run: Callable) -> dict:
+    """Queue a reading (run(fn) runs fn in the background) and return the screenshot, ocr_status 'pending'.
+    One that is already being read is left to finish rather than read twice."""
+    if reader is None:
+        raise NoReader()
+    with engine.begin() as conn:
+        get(conn, uid, shot_id)
+        queued = conn.execute(text("""
+            UPDATE ledger.wallet_screenshots SET ocr_status = 'pending', ocr_error = NULL,
+              ocr_progress = CAST(:p AS jsonb), ocr_progress_at = now()
+            WHERE id = :id AND user_id = :uid
+              AND NOT (ocr_status = 'pending' AND COALESCE(ocr_progress_at > now() - :stall, false)) RETURNING id"""),
+            {"id": shot_id, "uid": uid, "stall": STALL,
+             "p": json.dumps({"stage": "queued", "since": datetime.now(timezone.utc).isoformat()})}).scalar()
+    if queued:
+        run(lambda: _read_logged(engine, uid, shot_id, reader))
+    with engine.connect() as conn:
+        return get(conn, uid, shot_id)
+
+
+def _read_logged(engine, uid: int, shot_id: int, reader: WalletReader) -> None:
+    try:
+        read(engine, uid, shot_id, reader)
+    except NotFound:
+        pass  # discarded while it was being read
+    except Exception:
+        log.exception("reading wallet screenshot %s failed", shot_id)
+
+
+def _progress(engine, shot_id: int, since: Optional[str], stage: str, **detail) -> None:
+    with engine.begin() as conn:
+        conn.execute(text("UPDATE ledger.wallet_screenshots SET ocr_progress = CAST(:p AS jsonb), ocr_progress_at = now() "
+                          "WHERE id = :id AND ocr_status = 'pending'"),
+                     {"id": shot_id, "p": json.dumps({"stage": stage, "since": since, **detail})})
+
+
 def read(engine, uid: int, shot_id: int, reader: Optional[WalletReader]) -> dict:
-    """Run the vision model and store its proposal. Failures are stored (class name only)."""
+    """Run the vision model and store its proposal, reporting progress as it goes. Failures are stored
+    (class name only)."""
     if reader is None:
         raise NoReader()
     with engine.connect() as conn:
         shot = get(conn, uid, shot_id)
         data, mime = image(conn, uid, shot_id)
         wallet = _wallet(conn, uid, shot["account_id"])
+    since = (shot["ocr_progress"] or {}).get("since") or datetime.now(timezone.utc).isoformat()
+    progress = lambda stage, **detail: _progress(engine, shot_id, since, stage, **detail)  # noqa: E731
     try:
-        reading = reader.read(data, mime, f"{wallet.institution or wallet.name} {ACCOUNT_TYPES[wallet.type]}")
+        reading = reader.read(data, mime, f"{wallet.institution or wallet.name} {ACCOUNT_TYPES[wallet.type]}", progress)
+        progress("saving")
         with engine.begin() as conn:
             conn.execute(text("UPDATE ledger.wallet_screenshots SET ocr_status = 'done', ocr_result = CAST(:r AS jsonb), "
-                              "ocr_model = :m, ocr_error = NULL WHERE id = :id"),
+                              "ocr_model = :m, ocr_error = NULL, ocr_progress = NULL, ocr_progress_at = now() "
+                              "WHERE id = :id"),
                          {"r": reading.model_dump_json(), "m": reader.model, "id": shot_id})
     except Exception as e:
         with engine.begin() as conn:
-            conn.execute(text("UPDATE ledger.wallet_screenshots SET ocr_status = 'failed', ocr_error = :e, ocr_model = :m "
-                              "WHERE id = :id"), {"e": type(e).__name__, "m": reader.model, "id": shot_id})
+            conn.execute(text("UPDATE ledger.wallet_screenshots SET ocr_status = 'failed', ocr_error = :e, ocr_model = :m, "
+                              "ocr_progress = NULL, ocr_progress_at = now() WHERE id = :id"),
+                         {"e": type(e).__name__, "m": reader.model, "id": shot_id})
     with engine.connect() as conn:
         return get(conn, uid, shot_id)
 

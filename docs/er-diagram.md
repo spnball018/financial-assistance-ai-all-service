@@ -165,6 +165,8 @@ erDiagram
         jsonb ocr_result "entries ที่อ่านได้ + ยอดคงเหลือ"
         text ocr_model
         text ocr_error
+        jsonb ocr_progress "ขั้นระหว่างอ่านเบื้องหลัง"
+        timestamptz ocr_progress_at "ขั้นขยับล่าสุด (ค้าง > 3 นาที = Stalled)"
         timestamptz applied_at
     }
 

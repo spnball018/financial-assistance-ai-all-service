@@ -66,6 +66,15 @@ export interface WalletScreenshot {
   ocr_status: "pending" | "done" | "failed";
   ocr_result: { entries: WalletEntry[]; balance: number | null } | null;
   ocr_error: string | null;
+  /** while ocr_status is pending: where the background reading is */
+  ocr_progress: {
+    stage: "queued" | "reading" | "retry" | "saving";
+    since: string;
+    attempt?: number;
+    attempts?: number;
+    wait?: number;
+    reason?: "rate_limit" | "server" | "timeout";
+  } | null;
   applied_at: string | null;
 }
 

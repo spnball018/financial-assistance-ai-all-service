@@ -21,17 +21,62 @@ const TOPUP_LABEL: Record<WalletApplyResult["top_ups"][number]["status"], string
   confirmed: "รายการธนาคารยืนยันหรือเลือกหมวดไว้แล้ว ไม่ได้เปลี่ยน",
 };
 
+const RETRY_REASON: Record<string, string> = {
+  rate_limit: "AI ถูกจำกัดจำนวนครั้ง",
+  server: "บริการ AI ขัดข้องชั่วคราว",
+  timeout: "AI ตอบช้าเกิน 60 วินาที",
+};
+const OCR_ERROR: Record<string, string> = {
+  Stalled: "ค้างนานเกินไป เซิร์ฟเวอร์อาจรีสตาร์ตระหว่างอ่าน",
+  ReadTimeout: "AI ตอบช้าเกินไปทุกครั้งที่ลอง",
+  ConnectTimeout: "ติดต่อ AI ไม่ได้",
+  TimeoutException: "AI ตอบช้าเกินไปทุกครั้งที่ลอง",
+  ServerError: "บริการ AI ขัดข้อง",
+  ClientError: "AI ปฏิเสธคำขอ (โควตาหมดหรือ key ไม่ถูกต้อง)",
+  ValueError: "AI ไม่ส่งผลที่อ่านได้",
+  ValidationError: "AI ส่งผลที่อ่านไม่ได้",
+};
+
 type Row = WalletEntry & { include: boolean };
 type Shot = {
   key: string;
   name: string;
   preview: string;
+  phase: "shrinking" | "uploading" | null; // in the browser, before the server has the image
   shot: WalletScreenshot | null;
   rows: Row[];
   error: string | null;
   saving: boolean;
   result: WalletApplyResult | null;
 };
+
+const fromReading = (shot: WalletScreenshot): Partial<Shot> =>
+  shot.ocr_status === "done"
+    ? {
+        shot,
+        // a row whose date is not on this screen is usually on the previous screenshot
+        rows: (shot.ocr_result?.entries ?? []).map((e) => ({ ...e, include: e.date_shown && e.amount > 0 })),
+        error: null,
+      }
+    : shot.ocr_status === "pending"
+      ? { shot, rows: [], error: null }
+      : { shot, rows: [], error: `อ่านรูปไม่สำเร็จ: ${OCR_ERROR[shot.ocr_error ?? ""] ?? shot.ocr_error ?? "ไม่ทราบสาเหตุ"}` };
+
+/** What is happening to a screenshot that is not read yet, e.g. "AI กำลังอ่านรูป (ครั้งที่ 2/4) · 25 วินาที". */
+function progressText(s: Shot, now: number): string | null {
+  if (s.phase === "shrinking") return "ย่อขนาดรูป…";
+  if (s.phase === "uploading") return "กำลังอัปโหลด…";
+  const p = s.shot?.ocr_status === "pending" ? s.shot.ocr_progress : null;
+  if (!p) return null;
+  const tries = (n?: number) => (p.attempts && p.attempts > 1 && n && n > 1 ? ` (ครั้งที่ ${n}/${p.attempts})` : "");
+  const step =
+    p.stage === "queued" ? "รอคิว (อ่านพร้อมกันได้ 2 รูป)"
+    : p.stage === "reading" ? `AI กำลังอ่านรูป${tries(p.attempt)}`
+    : p.stage === "retry" ? `${RETRY_REASON[p.reason ?? ""] ?? "อ่านไม่สำเร็จ"} รอ ${p.wait} วินาทีแล้วลองใหม่${tries((p.attempt ?? 0) + 1)}`
+    : "บันทึกผลที่อ่านได้";
+  const secs = Math.max(0, Math.round((now - Date.parse(p.since)) / 1000));
+  return `${step} · ${secs} วินาที`;
+}
 
 /** Upload screenshots of a wallet app's history, check what was read, then record it. */
 export function WalletImportPanel({ accounts, onClose, onSaved }: {
@@ -44,6 +89,7 @@ export function WalletImportPanel({ accounts, onClose, onSaved }: {
     (wallets.find((a) => /true ?money/i.test(a.institution ?? a.name)) ?? wallets[0])?.id ?? null,
   );
   const [shots, setShots] = useState<Shot[]>([]);
+  const [now, setNow] = useState(Date.now());
   const input = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -60,6 +106,27 @@ export function WalletImportPanel({ accounts, onClose, onSaved }: {
       return id === undefined ? next : next.filter((s) => s.key === key || s.shot?.id !== id);
     });
 
+  // readings run on the server: poll the ones still pending, and tick the elapsed time
+  const pendingIds = shots.filter((s) => s.shot?.ocr_status === "pending").map((s) => s.shot!.id).join(",");
+  const busy = pendingIds !== "" || shots.some((s) => s.phase !== null);
+  useEffect(() => {
+    if (!busy) return;
+    const tick = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(tick);
+  }, [busy]);
+  useEffect(() => {
+    if (pendingIds === "") return;
+    const poll = window.setInterval(() => {
+      for (const id of pendingIds.split(",").map(Number)) {
+        api.walletScreenshot(id).then(
+          (shot) => setShots((list) => list.map((s) => (s.shot?.id === id && !s.result ? { ...s, ...fromReading(shot) } : s))),
+          () => undefined,
+        );
+      }
+    }, 1500);
+    return () => window.clearInterval(poll);
+  }, [pendingIds]);
+
   // screenshots read earlier but not recorded yet (e.g. the page was reloaded): pick up where we left off
   useEffect(() => {
     if (accountId === null) return;
@@ -71,7 +138,7 @@ export function WalletImportPanel({ accounts, onClose, onSaved }: {
           .filter((p) => !cur.some((s) => s.shot?.id === p.id))
           .map((p) => ({
             key: `saved-${p.id}`, name: `รูปที่อัปโหลดไว้ #${p.id}`, preview: `/api/wallet-screenshots/${p.id}/image`,
-            shot: null, rows: [], error: null, saving: false, result: null, ...fromReading(p),
+            phase: null, shot: null, rows: [], error: null, saving: false, result: null, ...fromReading(p),
           })),
       ]);
     }, () => undefined);
@@ -90,29 +157,24 @@ export function WalletImportPanel({ accounts, onClose, onSaved }: {
     setShots((list) => list.filter((x) => x.key !== s.key));
   };
 
-  const fromReading = (shot: WalletScreenshot): Partial<Shot> =>
-    shot.ocr_status === "done"
-      ? {
-          shot,
-          // a row whose date is not on this screen is usually on the previous screenshot
-          rows: (shot.ocr_result?.entries ?? []).map((e) => ({ ...e, include: e.date_shown && e.amount > 0 })),
-          error: null,
-        }
-      : { shot, rows: [], error: `อ่านรูปไม่สำเร็จ (${shot.ocr_error ?? "ไม่ทราบสาเหตุ"})` };
-
   const onFiles = async (files: FileList | null) => {
     if (!files || accountId === null) return;
     const added: Shot[] = [...files].map((f, i) => ({
-      key: `${Date.now()}-${i}`, name: f.name, preview: URL.createObjectURL(f), shot: null, rows: [], error: null,
-      saving: false, result: null,
+      key: `${Date.now()}-${i}`, name: f.name, preview: URL.createObjectURL(f), phase: "shrinking", shot: null,
+      rows: [], error: null, saving: false, result: null,
     }));
     setShots((list) => [...list, ...added]);
     if (input.current) input.current.value = "";
+    // uploads are quick (the server reads in the background), so one at a time is fine
     for (const [i, f] of [...files].entries()) {
       try {
-        patch(added[i].key, fromReading(await api.uploadWalletScreenshot(accountId, await shrinkImage(f))));
+        const small = await shrinkImage(f);
+        patch(added[i].key, { phase: "uploading" });
+        patch(added[i].key, { phase: null, ...fromReading(await api.uploadWalletScreenshot(accountId, small)) });
       } catch (e) {
-        patch(added[i].key, { error: (e as Error).message });
+        const err = e as Error;
+        const msg = err.name === "TimeoutError" ? "อัปโหลดไม่เสร็จใน 60 วินาที ลองเลือกรูปใหม่" : err.message;
+        patch(added[i].key, { phase: null, error: `อัปโหลดไม่สำเร็จ: ${msg}` });
       }
     }
   };
@@ -185,11 +247,21 @@ export function WalletImportPanel({ accounts, onClose, onSaved }: {
             />
           </div>
         )}
+        {shots.length > 0 && (
+          <p className="muted small">
+            อ่านเสร็จ {shots.filter((s) => s.shot?.ocr_status === "done").length}/{shots.length} รูป
+            {busy && " · อ่านต่อเบื้องหลังแม้ปิดหน้านี้ เปิดกลับมาจะเห็นผล"}
+          </p>
+        )}
         {shots.map((s) => (
           <div key={s.key} className="wallet-shot">
             <img src={s.preview} alt={s.name} />
             <div className="wallet-shot-body">
-              {!s.shot && !s.error && <p className="muted">กำลังอ่านรูป…</p>}
+              {progressText(s, now) && (
+                <p className="muted">
+                  <span className="spinner" aria-hidden="true" /> {progressText(s, now)}
+                </p>
+              )}
               {s.error && (
                 <div className="message error">
                   {s.error}{" "}

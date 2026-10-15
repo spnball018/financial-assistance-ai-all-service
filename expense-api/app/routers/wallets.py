@@ -1,4 +1,5 @@
-from typing import Optional
+from concurrent.futures import ThreadPoolExecutor
+from typing import Callable, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
 from pydantic import BaseModel
@@ -19,6 +20,14 @@ def get_reader() -> Optional[WalletReader]:
     return reader_from_env()
 
 
+# readings run here, after the request has returned; two at a time keeps under the model's rate limit
+_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="wallet-read")
+
+
+def get_runner() -> Callable:
+    return _pool.submit
+
+
 def _run(fn):
     try:
         return fn()
@@ -34,16 +43,19 @@ def _run(fn):
 
 @router.post("/wallets/{account_id}/screenshots", status_code=201)
 async def upload_screenshot(account_id: int, file: UploadFile = File(...),
-                            reader: Optional[WalletReader] = Depends(get_reader), uid: int = Depends(current_user_id)):
-    """Upload a screenshot of the wallet app's history and read it. The response carries the proposed
-    entries (ocr_result.entries); nothing is recorded until POST /wallet-screenshots/{id}/apply.
-    The same image again returns the stored screenshot and reading (read again only if that failed)."""
+                            reader: Optional[WalletReader] = Depends(get_reader), run: Callable = Depends(get_runner),
+                            uid: int = Depends(current_user_id)):
+    """Upload a screenshot of the wallet app's history; it is read in the background. The response comes
+    back right away with ocr_status 'pending' and ocr_progress; poll GET /wallet-screenshots/{id} until it is
+    'done' (proposed entries in ocr_result.entries) or 'failed'. Nothing is recorded until
+    POST /wallet-screenshots/{id}/apply. The same image again returns the stored screenshot and reading
+    (read again only if that failed)."""
     data = await file.read(MAX_BYTES + 1)
     with get_engine().begin() as conn:
         shot = _run(lambda: service.upload(conn, uid, account_id, data, file.content_type or ""))
     if shot["ocr_status"] == "done":
         return shot
-    return _run(lambda: service.read(get_engine(), uid, shot["id"], reader))
+    return _run(lambda: service.start_read(get_engine(), uid, shot["id"], reader, run))
 
 
 @router.get("/wallets/{account_id}/screenshots")
@@ -67,8 +79,9 @@ def screenshot_image(shot_id: int, uid: int = Depends(current_user_id)):
 
 @router.post("/wallet-screenshots/{shot_id}/read")
 def reread_screenshot(shot_id: int, reader: Optional[WalletReader] = Depends(get_reader),
-                      uid: int = Depends(current_user_id)):
-    return _run(lambda: service.read(get_engine(), uid, shot_id, reader))
+                      run: Callable = Depends(get_runner), uid: int = Depends(current_user_id)):
+    """Read again in the background (poll GET /wallet-screenshots/{id})."""
+    return _run(lambda: service.start_read(get_engine(), uid, shot_id, reader, run))
 
 
 @router.delete("/wallet-screenshots/{shot_id}", status_code=204)

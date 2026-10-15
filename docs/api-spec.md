@@ -345,20 +345,22 @@ Response `200`: `{"removed": 2}` · `404` ไม่มีรายการ · `
 wallet หรือบัตรเครดิต (`ewallet` / `credit_card`) เป็นบัญชีที่มีรายการของตัวเอง แบบเดียวกับบัตร KTC แต่ข้อมูลมาจากรูปหน้าจอประวัติรายการในแอป สำหรับบัตร การชำระบัตรนับเป็น `top_up` (จับคู่กับรายการธนาคารที่ชื่อผู้รับเข้ากับผู้ออกบัตร เช่น Bangkok Bank: `bangkok ?bank|ธนาคารกรุงเทพ|bualuang|บัวหลวง`) อ่านด้วย Gemini vision (ตั้งค่าเดียวกับใบเสร็จ ไม่มี key ได้ `503`) รูปเก็บใน `RECEIPTS_DIR` เหมือนใบเสร็จ
 
 #### ✅ `POST /wallets/{account_id}/screenshots` (multipart `file`) → 201
-อัปโหลดแล้วอ่านทันที ยังไม่บันทึกรายการ บัญชีต้องเป็น `ewallet` หรือ `credit_card` (`422`) · รูปเดิมซ้ำในบัญชีเดียวกันได้รูปเดิมพร้อมผลที่อ่านไว้คืนมา (ไม่อ่านใหม่ถ้าเคยอ่านสำเร็จ) ใช้ทำต่อหลัง reload หน้า · รูปเดิมในบัญชีอื่นได้ `409`
+อัปโหลดแล้วตอบกลับทันทีด้วย `ocr_status: pending` การอ่านทำเบื้องหลัง (อ่านพร้อมกันได้ 2 รูป, Gemini แต่ละครั้ง timeout 60 วินาที ลองใหม่สูงสุด 4 ครั้งเมื่อ timeout / 429 / 5xx) หน้าเว็บ poll `GET /wallet-screenshots/{id}` จนเป็น `done` หรือ `failed` ยังไม่บันทึกรายการ บัญชีต้องเป็น `ewallet` หรือ `credit_card` (`422`) · รูปเดิมซ้ำในบัญชีเดียวกันได้รูปเดิมพร้อมผลที่อ่านไว้คืนมา (ไม่อ่านใหม่ถ้าเคยอ่านสำเร็จ) ใช้ทำต่อหลัง reload หน้า · รูปเดิมในบัญชีอื่นได้ `409`
 ```json
 {"id": 3, "account_id": 10, "ocr_status": "done", "applied_at": null,
  "ocr_result": {"balance": 310.0, "entries": [
    {"occurred_at": "2026-09-05 14:12", "title": "7-Eleven", "amount": 89.0, "direction": "out", "kind": "payment"},
    {"occurred_at": "2026-09-05 14:10", "title": "เติมเงิน", "amount": 1200.0, "direction": "in", "kind": "top_up"}]}}
 ```
+ระหว่างอ่าน `ocr_progress` บอกขั้น: `{"stage": "queued" | "reading" | "retry" | "saving", "since": "<เวลาเริ่ม ISO>", "attempt": 2, "attempts": 4, "wait": 6.0, "reason": "rate_limit | server | timeout"}` (`retry` = กำลังรอ `wait` วินาทีก่อนลองครั้งถัดไป) · `ocr_progress_at` เวลาที่ขั้นขยับล่าสุด ถ้าไม่ขยับเกิน 3 นาที (เช่นเซิร์ฟเวอร์รีสตาร์ตระหว่างอ่าน) API แสดงเป็น `ocr_status: failed`, `ocr_error: "Stalled"` แล้วสั่งอ่านใหม่ได้ · อ่านไม่สำเร็จ `ocr_error` เป็นชื่อ exception (`ReadTimeout`, `ServerError`, `ClientError`, ...)
+
 `kind`: `payment | top_up | transfer_out | transfer_in | refund | cashback | other` · `occurred_at` เวลาไทย ปี ค.ศ.
 - `date_shown: false`: แถวที่อยู่เหนือหัววันที่แรกบนจอ วันที่เป็นการเดา (มักอยู่ในรูปก่อนหน้า)
 - `uncertain: true`: แสงสะท้อนหรือขอบจอบังตัวเลขยอด/เวลาบางส่วน ให้ผู้ใช้ตรวจ
 - อ่านได้ทั้งภาพหน้าจอและภาพถ่ายหน้าจอโทรศัพท์ (ทดสอบกับภาพถ่ายแอป TrueMoney 4 รูป: 2026-10-12)
 
 #### ✅ `GET /wallets/{account_id}/screenshots` · `GET /wallet-screenshots/{id}` · `GET /wallet-screenshots/{id}/image` · `POST /wallet-screenshots/{id}/read`
-`GET /wallets/{account_id}/screenshots`: หน้าเว็บใช้โหลดรูปที่ `applied_at` ยังว่าง (อ่านแล้วแต่ยังไม่บันทึก) กลับมาตอนเปิดหน้านำเข้า
+`GET /wallets/{account_id}/screenshots`: หน้าเว็บใช้โหลดรูปที่ `applied_at` ยังว่าง (กำลังอ่าน หรืออ่านแล้วแต่ยังไม่บันทึก) กลับมาตอนเปิดหน้านำเข้า · `POST .../read` สั่งอ่านใหม่เบื้องหลัง (รูปที่กำลังอ่านอยู่ไม่ถูกสั่งซ้ำ)
 
 #### ✅ `DELETE /wallet-screenshots/{id}` → 204
 ทิ้งรูปที่ยังไม่ได้บันทึก รูปที่บันทึกแล้วได้ `422`
