@@ -37,6 +37,15 @@ const OCR_ERROR: Record<string, string> = {
   ValidationError: "AI ส่งผลที่อ่านไม่ได้",
 };
 
+// what a row becomes when recorded: out -> expense, in -> income, a top-up -> transfer from the bank
+const FLOW = {
+  expense: { label: "รายจ่าย", badge: "badge-out" },
+  income: { label: "รายรับ", badge: "badge-in" },
+  transfer: { label: "โอนเข้า", badge: "badge-transfer" },
+};
+const flow = (e: WalletEntry): keyof typeof FLOW =>
+  e.direction === "out" ? "expense" : e.kind === "top_up" ? "transfer" : "income";
+
 type Row = WalletEntry & { include: boolean };
 type Shot = {
   key: string;
@@ -375,7 +384,7 @@ export function WalletImportPanel({ accounts, onClose, onSaved }: {
                           )}
                         </td>
                         <td className="num">
-                          {r.direction === "out" ? "−" : "+"}
+                          <span className={`badge ${FLOW[flow(r)].badge}`}>{FLOW[flow(r)].label}</span>{" "}
                           <input type="number" min="0" step="0.01" value={r.amount} disabled={!!s.result}
                             onChange={(e) => edit(s, i, { amount: Number(e.target.value), uncertain: false })} />
                           {r.uncertain && <div className="small warn-text">อ่านไม่ชัด ตรวจยอด/เวลา</div>}

@@ -82,6 +82,8 @@ tr.child-row td { background: var(--bg); }
 .badge-user { background: var(--selected); color: var(--accent); }
 .badge-warn { background: var(--warn-bg); color: var(--warn); }
 .badge-transfer { background: var(--warn-bg); color: var(--warn); }
+.badge-out { background: var(--error-bg); color: var(--error); margin-left: 0; }
+.badge-in { background: var(--ok-bg); color: var(--ok); margin-left: 0; }
 .category-select.is-transfer { border-color: var(--warn); }
 .remember { display: block; margin-top: 4px; cursor: pointer; }
 .transfers { margin-top: 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
