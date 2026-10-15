@@ -35,7 +35,7 @@ export function App() {
 
 function SignedIn({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
   const [page, setPage] = useState<Page>(() => {
-    const h = location.hash.slice(1) as Page;
+    const h = location.hash.slice(1).split("/")[0] as Page;
     return PAGES.includes(h) ? h : "review";
   });
   const [categories, setCategories] = useState<Category[]>([]);
@@ -53,7 +53,7 @@ function SignedIn({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
   // back/forward buttons and links change only the hash
   useEffect(() => {
     const onHash = () => {
-      const h = location.hash.slice(1) as Page;
+      const h = location.hash.slice(1).split("/")[0] as Page;
       if (PAGES.includes(h)) setPage(h);
     };
     window.addEventListener("hashchange", onHash);

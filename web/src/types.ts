@@ -161,6 +161,38 @@ export interface Balance {
   bank_reported: { balance: number; as_of: string; computed: number; difference: number } | null;
 }
 
+export interface LedgerRow {
+  transaction_id: number;
+  status: Status;
+  occurred_at: string;
+  has_time: boolean;
+  kind: "expense" | "income" | "transfer" | "opening";
+  node_type: string;
+  source: string;
+  amount: number; // signed: money out of the account is negative
+  counted: boolean; // false: ignored, or before the opening balance day
+  merchant_raw: string | null;
+  description: string | null;
+  note: string | null;
+  channel: string | null;
+  category_th: string | null;
+  other_account: string | null; // the other side of a transfer
+  balance: number; // running, confirmed only
+  balance_with_pending: number;
+  bank_balance: number | null; // "Available Balance" in the K PLUS email
+  difference: number | null; // bank_balance - balance_with_pending
+  gap_starts: boolean;
+}
+
+export interface AccountLedger {
+  id: number;
+  name: string;
+  type: AccountType;
+  is_active: boolean;
+  opening: { amount: number; as_of: string } | null;
+  rows: LedgerRow[];
+}
+
 export interface EmailSource {
   id: number;
   source: "kbank_email" | "ktc_pdf" | "shopee_email" | "lazada_email";

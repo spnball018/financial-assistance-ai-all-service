@@ -83,6 +83,25 @@ token ของตัวเองเท่านั้น `POST` body `{"name": 
 - การนับยอด: รายการระดับบนสุด (root) เท่านั้นที่ขยับยอดบัญชี (expense/transfer = ออก, income/opening = เข้า) ลูกในต้นไม้ไม่นับซ้ำ ส่วนทุกรายการ transfer เพิ่มยอดให้บัญชีปลายทาง
 - `bank_reported`: เฉพาะบัญชีที่ผูกกับแหล่ง `kbank_email` "ยอดถอนได้" จากอีเมล K PLUS ล่าสุด เทียบกับยอดที่ระบบคำนวณ ณ เวลาเดียวกัน (รวม pending) ถ้าต่างกัน มักเป็นเงินเข้าที่ไม่มีอีเมลแจ้ง หรือยังไม่ได้ใส่ยอดยกมา
 
+#### ✅ `GET /accounts/{id}/ledger`
+ทุกรายการที่ขยับยอดบัญชีนี้ (จาก `v_account_postings` เดียวกับ `/accounts/balances`) ใหม่สุดก่อน พร้อมยอดหลังแต่ละรายการ ใช้หาว่ายอดเริ่มไม่ตรงตรงไหน
+```json
+{"id": 1, "name": "KBank ใช้จ่าย", "type": "bank", "is_active": true,
+ "opening": {"amount": 10000.0, "as_of": "2026-09-01"},
+ "rows": [{"transaction_id": 42, "status": "confirmed", "occurred_at": "2026-10-03T03:52:02+00:00", "has_time": true,
+           "kind": "expense", "node_type": "payment", "source": "kbank_email", "amount": -700.0, "counted": true,
+           "merchant_raw": "ร้าน A", "description": "bill_payment", "note": null, "channel": "bill_payment",
+           "category_th": "อาหาร", "other_account": null,
+           "balance": 12800.0, "balance_with_pending": 11801.0,
+           "bank_balance": 11301.0, "difference": -500.0, "gap_starts": true}]}
+```
+- `amount` มีเครื่องหมาย: เงินออกจากบัญชีนี้ติดลบ ฝั่งปลายทางของการโอนเป็นบวก และ `other_account` คืออีกบัญชีของการโอน
+- `counted=false`: รายการ `ignored` หรือก่อนวันยอดยกมา แสดงไว้แต่ไม่นับในยอด
+- `balance` / `balance_with_pending`: ยอดสะสมหลังรายการนี้ (แถวใหม่สุดเท่ากับค่าใน `/accounts/balances`)
+- `bank_balance`: "ยอดถอนได้" ในอีเมล K PLUS ของรายการนี้ (เฉพาะฝั่งบัญชีต้นทาง) `difference` = `bank_balance − balance_with_pending`
+- `gap_starts`: แถวแรกที่ `difference` เปลี่ยนจากแถวที่มียอดธนาคารก่อนหน้า (ตัวที่หายหรือผิดอยู่ที่แถวนั้นหรือก่อนหน้า)
+- `404` ถ้าไม่มีบัญชี
+
 #### ✅ `PUT /accounts/{id}/opening-balance`
 ```json
 {"amount": "10000.00", "as_of": "2026-09-01"}

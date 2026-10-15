@@ -104,3 +104,58 @@ def balances(conn, uid: int) -> list[dict]:
         row["bank_reported"] = _bank_reported(conn, uid, row["account_id"], since)
         out.append(row)
     return out
+
+
+# Every posting of one account, oldest first, with running balances that add up exactly like _BALANCES:
+# rows before the opening day and ignored rows are listed but do not count. `bank_balance` is the
+# "Available Balance" of the K PLUS email behind the row (only on the row's own account, not the
+# counter side of a transfer).
+_LEDGER = text("""
+WITH opening AS (
+  SELECT occurred_at AS since FROM ledger.transactions
+  WHERE user_id = :uid AND node_type = 'opening_balance' AND account_id = :a
+), p AS (
+  SELECT p.transaction_id, p.status, p.occurred_at, p.kind, p.amount,
+         p.status IN ('confirmed', 'pending') AND (o.since IS NULL OR p.occurred_at >= o.since) AS counted
+  FROM ledger.v_account_postings p LEFT JOIN opening o ON true
+  WHERE p.user_id = :uid AND p.account_id = :a
+)
+SELECT p.transaction_id, p.status, p.occurred_at, p.kind, p.amount, p.counted,
+       t.has_time, t.node_type, t.source, t.merchant_raw, t.description, t.note,
+       t.raw->>'channel' AS channel,
+       c.name_th AS category_th,
+       ca.name AS other_account,
+       CASE WHEN t.account_id = :a THEN CAST(t.raw->>'balance_after' AS numeric) END AS bank_balance,
+       sum(p.amount) FILTER (WHERE p.counted AND p.status = 'confirmed')
+         OVER (ORDER BY p.occurred_at, p.transaction_id) AS balance,
+       sum(p.amount) FILTER (WHERE p.counted)
+         OVER (ORDER BY p.occurred_at, p.transaction_id) AS balance_with_pending
+FROM p
+JOIN ledger.transactions t ON t.id = p.transaction_id AND t.user_id = :uid
+LEFT JOIN ledger.categories c ON c.id = t.category_id
+LEFT JOIN ledger.accounts ca ON ca.user_id = :uid
+  AND ca.id = CASE WHEN t.account_id = :a THEN t.counter_account_id ELSE t.account_id END
+ORDER BY p.occurred_at, p.transaction_id""")
+
+
+def account_ledger(conn, uid: int, account_id: int) -> dict:
+    """The account's postings newest first. `difference` = bank_balance - balance_with_pending on rows with
+    a bank balance; `gap_starts` marks the row where the difference first changes (the row itself or a
+    movement just before it is missing or wrong)."""
+    acc = conn.execute(text("SELECT id, name, type, is_active FROM ledger.accounts WHERE id = :a AND user_id = :uid"),
+                       {"a": account_id, "uid": uid}).first()
+    if acc is None:
+        raise NotFound(account_id)
+    rows, prev_diff = [], Decimal(0)
+    for r in conn.execute(_LEDGER, {"a": account_id, "uid": uid}):
+        row = dict(r._mapping)
+        row["balance"] = row["balance"] or Decimal(0)
+        row["balance_with_pending"] = row["balance_with_pending"] or Decimal(0)
+        row["difference"], row["gap_starts"] = None, False
+        if row["bank_balance"] is not None and row["counted"]:
+            row["difference"] = row["bank_balance"] - row["balance_with_pending"]
+            row["gap_starts"] = row["difference"] != prev_diff
+            prev_diff = row["difference"]
+        rows.append(row)
+    rows.reverse()
+    return {**dict(acc._mapping), "opening": get_opening(conn, uid, account_id), "rows": rows}

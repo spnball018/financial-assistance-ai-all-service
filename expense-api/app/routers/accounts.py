@@ -115,6 +115,17 @@ def account_balances(uid: int = Depends(current_user_id)):
         return bal.balances(conn, uid)
 
 
+@router.get("/accounts/{account_id}/ledger")
+def account_ledger(account_id: int, uid: int = Depends(current_user_id)):
+    """Every movement of one account, newest first, with the running balance after each row and, on rows
+    from a K PLUS email, the balance the bank reported, to find where the computed balance drifts."""
+    with get_engine().connect() as conn:
+        try:
+            return bal.account_ledger(conn, uid, account_id)
+        except bal.NotFound:
+            raise HTTPException(status_code=404, detail="account not found")
+
+
 class OpeningBalance(BaseModel):
     amount: Decimal = Field(max_digits=15, decimal_places=2)
     as_of: date

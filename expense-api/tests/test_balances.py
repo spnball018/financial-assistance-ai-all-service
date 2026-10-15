@@ -108,3 +108,54 @@ def test_kbank_reported_balance_vs_computed(api, db):
     assert Decimal(str(rep["balance"])) == Decimal("14189.79")
     assert Decimal(str(rep["computed"])) == Decimal("14300")
     assert Decimal(str(rep["difference"])) == Decimal("-110.21")
+
+
+def set_bank_balance(db, txn_id, amount):
+    with db.begin() as conn:
+        conn.execute(text("UPDATE ledger.transactions SET raw = jsonb_build_object('balance_after', CAST(:b AS text)) "
+                          "WHERE id = :id"), {"b": amount, "id": txn_id})
+
+
+def at(day, hour=3):
+    return datetime(2026, 9, day, hour, 0, tzinfo=TZ)
+
+
+def test_ledger_running_balance_matches_balances(api, db):
+    wallet = acct(db, "TrueMoney")
+    api.put("/accounts/1/opening-balance", json={"amount": "10000", "as_of": "2026-09-01"})
+    add(db, "old", "123", when=datetime(2026, 8, 31, 16, 59, tzinfo=TZ))   # before the opening day
+    add(db, "e1", "700", when=at(2))
+    add(db, "t1", "1500", kind="transfer", counter=wallet, when=at(3))
+    add(db, "x1", "50", status="ignored", when=at(4))
+    add(db, "p1", "999", status="pending", when=at(5))
+    add(db, "i1", "5000", kind="income", when=at(6))
+    led = api.get("/accounts/1/ledger").json()
+    rows = led["rows"]
+    assert [r["kind"] for r in rows] == ["income", "expense", "expense", "transfer", "expense", "opening", "expense"]
+    assert [r["counted"] for r in rows] == [True, True, False, True, True, True, False]
+    newest = rows[0]
+    k = bal(api, 1)
+    assert Decimal(str(newest["balance"])) == Decimal(str(k["balance"])) == Decimal("12800")
+    assert Decimal(str(newest["balance_with_pending"])) == Decimal(str(k["balance_with_pending"]))
+    assert Decimal(str(rows[3]["amount"])) == Decimal("-1500") and rows[3]["other_account"] == "TrueMoney"
+    # the ignored row does not move the running balance
+    assert rows[2]["balance"] == rows[3]["balance"]
+    # the counter side of the transfer shows up on the wallet as money in, from KBank
+    w = api.get(f"/accounts/{wallet}/ledger").json()["rows"]
+    assert len(w) == 1 and Decimal(str(w[0]["amount"])) == Decimal("1500") and w[0]["other_account"] == "KBank ใช้จ่าย"
+
+
+def test_ledger_marks_where_bank_balance_starts_to_differ(api, db):
+    api.put("/accounts/1/opening-balance", json={"amount": "1000", "as_of": "2026-09-01"})
+    set_bank_balance(db, add(db, "a", "100", when=at(2)), "900")      # matches
+    add(db, "in", "500", kind="income", when=at(3))                   # recorded, but the bank never got it
+    set_bank_balance(db, add(db, "b", "100", when=at(4)), "800")      # bank 800, computed 1300
+    set_bank_balance(db, add(db, "c", "100", when=at(5)), "700")      # same gap, not a new one
+    rows = {r["transaction_id"]: r for r in api.get("/accounts/1/ledger").json()["rows"]}
+    by_bank = sorted((r for r in rows.values() if r["bank_balance"] is not None), key=lambda r: r["occurred_at"])
+    assert [Decimal(str(r["difference"])) for r in by_bank] == [0, -500, -500]
+    assert [r["gap_starts"] for r in by_bank] == [False, True, False]
+
+
+def test_ledger_unknown_account_is_404(api):
+    assert api.get("/accounts/99999/ledger").status_code == 404

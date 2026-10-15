@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { AccountLedgerPage } from "./AccountLedgerPage";
 import { api } from "./api";
 import { fmtMoney, fmtWhen } from "./format";
 import type { Balance, TransferMatch } from "./types";
@@ -38,7 +39,29 @@ function OpeningEditor({ b, onSaved }: { b: Balance; onSaved: () => void }) {
   );
 }
 
+/** "#balances/12" -> 12: the ledger of one account is open. */
+function ledgerFromHash(): number | null {
+  const m = location.hash.match(/^#balances\/(\d+)$/);
+  return m ? Number(m[1]) : null;
+}
+
 export function BalancesPage() {
+  const [ledgerId, setLedgerId] = useState<number | null>(ledgerFromHash);
+  useEffect(() => {
+    const onHash = () => setLedgerId(ledgerFromHash());
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+  const openLedger = (id: number | null) => {
+    location.hash = id === null ? "balances" : `balances/${id}`;
+  };
+
+  if (ledgerId !== null)
+    return <AccountLedgerPage accountId={ledgerId} onBack={() => openLedger(null)} onPick={openLedger} />;
+  return <BalanceList onOpen={openLedger} />;
+}
+
+function BalanceList({ onOpen }: { onOpen: (id: number) => void }) {
   const [rows, setRows] = useState<Balance[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [showInactive, setShowInactive] = useState(false);
@@ -74,7 +97,8 @@ export function BalancesPage() {
       </div>
       <p className="muted small">
         <b>ยอดยกมา</b> = ยอดเงิน ณ ต้นวันที่ระบุ ยอดคงเหลือ = ยอดยกมา + รายการที่ยืนยันแล้วตั้งแต่วันนั้น
-        (การโอนเข้าบัญชีตัวเองจะย้ายยอดจากบัญชีหนึ่งไปอีกบัญชี) บัตรเครดิตใส่ติดลบสำหรับยอดค้าง
+        (การโอนเข้าบัญชีตัวเองจะย้ายยอดจากบัญชีหนึ่งไปอีกบัญชี) บัตรเครดิตใส่ติดลบสำหรับยอดค้าง ·
+        กดชื่อบัญชีเพื่อดูทุกรายการพร้อมยอดหลังรายการ
       </p>
       {error && <div className="message error">{error}</div>}
       {matches.length > 0 && (
@@ -113,7 +137,9 @@ export function BalancesPage() {
             {visible.map((b) => (
               <tr key={b.account_id}>
                 <td className="b-name">
-                  {b.name}
+                  <button className="link b-open-ledger" onClick={() => onOpen(b.account_id)} title="ดูรายการของบัญชีนี้">
+                    {b.name} ›
+                  </button>
                   {b.last_movement_at && (
                     <div className="muted small">ล่าสุด {fmtWhen(b.last_movement_at, false)}</div>
                   )}

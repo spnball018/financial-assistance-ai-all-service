@@ -257,3 +257,22 @@ button.link.danger { color: var(--error); }
 .note-field button { justify-self: start; }
 .note { color: var(--ai); }
 .details select { font: inherit; max-width: 100%; }
+
+/* account ledger */
+button.b-open-ledger { padding: 0; font: inherit; font-weight: 600; text-align: left; }
+.ledger-summary { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: baseline; margin: 8px 0; }
+.ledger-summary b { font-size: 18px; }
+table.ledger .l-date { white-space: nowrap; }
+table.ledger .l-open { padding: 0; font: inherit; color: inherit; text-align: left; }
+table.ledger tr.uncounted td { opacity: 0.55; }
+table.ledger tr.gap td { background: var(--warn-bg); }
+@media (max-width: 640px) {
+  table.ledger tbody tr {
+    grid-template-columns: 1fr auto;
+    grid-template-areas: "what amt" "date bal" "bank bank";
+  }
+  .l-what { grid-area: what; } .l-amt { grid-area: amt; font-weight: 600; }
+  .l-date { grid-area: date; } .l-bal { grid-area: bal; }
+  .l-bank { grid-area: bank; }
+  .l-bank:empty { display: none; }
+}

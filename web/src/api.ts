@@ -1,4 +1,4 @@
-import type { Account, AccountInput, ApiToken, Balance, Category, CreatedApiToken, EmailSource, GmailStatus, Me, MerchantRule, User, Receipt, TransferMatch, ConfirmResult, Status, Summary, SyncResult, Txn, TxnDetails, ReportExpense, WalletApplyResult, WalletEntry, WalletScreenshot } from "./types";
+import type { Account, AccountInput, AccountLedger, ApiToken, Balance, Category, CreatedApiToken, EmailSource, GmailStatus, Me, MerchantRule, User, Receipt, TransferMatch, ConfirmResult, Status, Summary, SyncResult, Txn, TxnDetails, ReportExpense, WalletApplyResult, WalletEntry, WalletScreenshot } from "./types";
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -56,6 +56,7 @@ export const api = {
   accounts: () => call<Account[]>("/accounts"),
   deleteTransaction: (id: number) => noContent(`/transactions/${id}`, { method: "DELETE" }),
   balances: () => call<Balance[]>("/accounts/balances"),
+  accountLedger: (id: number) => call<AccountLedger>(`/accounts/${id}/ledger`),
   setOpening: (id: number, body: { amount: string; as_of: string }) =>
     call<{ amount: number; as_of: string }>(`/accounts/${id}/opening-balance`, { method: "PUT", body: JSON.stringify(body) }),
   deleteOpening: (id: number) => noContent(`/accounts/${id}/opening-balance`, { method: "DELETE" }),
