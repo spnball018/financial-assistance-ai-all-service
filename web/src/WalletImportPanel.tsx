@@ -42,7 +42,7 @@ type Shot = {
   key: string;
   name: string;
   preview: string;
-  phase: "shrinking" | "uploading" | null; // in the browser, before the server has the image
+  phase: "waiting" | "shrinking" | "uploading" | null; // in the browser, before the server has the image
   bytes: number | null; // what is being uploaded, after shrinking
   phaseAt: number; // when the browser-side phase started (Date.now())
   shot: WalletScreenshot | null;
@@ -68,12 +68,15 @@ const fromReading = (shot: WalletScreenshot): Partial<Shot> =>
 const MAX_UNSHRUNK = 3 * 1024 * 1024;
 const fmtSize = (n: number) => (n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
 
+const UPLOADS_AT_ONCE = 2;
 const STEPS = ["กำลังย่อรูป", "กำลังส่งรูป", "รอ OCR", "OCR กำลังอ่าน", "บันทึกผล"];
 
 /** Where a screenshot that is not read yet is: the step (index into STEPS) and a detail line,
  * e.g. step 3, "ครั้งที่ 2/4 · 25 วินาที". */
 function progress(s: Shot, now: number): { step: number; detail: string } | null {
   const secs = (since: number) => `${Math.max(0, Math.round((now - since) / 1000))} วินาที`;
+  // not started: no step is current yet
+  if (s.phase === "waiting") return { step: -1, detail: `รอรูปก่อนหน้า (ย่อและส่งทีละ ${UPLOADS_AT_ONCE} รูป)` };
   if (s.phase === "shrinking") return { step: 0, detail: secs(s.phaseAt) };
   if (s.phase === "uploading")
     return { step: 1, detail: `${s.bytes === null ? "" : `${fmtSize(s.bytes)} · `}${secs(s.phaseAt)}` };
@@ -185,30 +188,40 @@ export function WalletImportPanel({ accounts, onClose, onSaved }: {
 
   const onFiles = async (files: FileList | null) => {
     if (!files || accountId === null) return;
-    const added: Shot[] = [...files].map((f, i) => ({
-      key: `${Date.now()}-${i}`, name: f.name, preview: URL.createObjectURL(f), phase: "shrinking", bytes: null, phaseAt: Date.now(), shot: null,
-      rows: [], error: null, saving: false, result: null,
+    const list = [...files];
+    const added: Shot[] = list.map((f, i) => ({
+      key: `${Date.now()}-${i}`, name: f.name, preview: URL.createObjectURL(f), phase: "waiting", bytes: null,
+      phaseAt: Date.now(), shot: null, rows: [], error: null, saving: false, result: null,
     }));
-    setShots((list) => [...list, ...added]);
+    setShots((cur) => [...cur, ...added]);
     if (input.current) input.current.value = "";
-    // uploads are quick (the server reads in the background), so one at a time is fine
-    for (const [i, f] of [...files].entries()) {
+    const one = async (f: File, key: string) => {
       try {
+        patch(key, { phase: "shrinking", phaseAt: Date.now() });
         const small = await shrinkImage(f);
         if (small === f && f.size > MAX_UNSHRUNK) {
-          patch(added[i].key, { phase: null,
+          patch(key, { phase: null,
             error: `ย่อรูปไม่ได้ (รูป ${fmtSize(f.size)} เบราว์เซอร์อาจเปิดไฟล์แบบนี้ไม่ได้ เช่น HEIC) ลองแคปหน้าจอเป็น PNG/JPG แทน` });
-          continue;
+          return;
         }
-        patch(added[i].key, { phase: "uploading", bytes: small.size, phaseAt: Date.now() });
-        patch(added[i].key, { phase: null, ...fromReading(await api.uploadWalletScreenshot(accountId, small)) });
+        patch(key, { phase: "uploading", bytes: small.size, phaseAt: Date.now() });
+        patch(key, { phase: null, ...fromReading(await api.uploadWalletScreenshot(accountId, small)) });
       } catch (e) {
         const err = e as Error;
         const msg = err.name === "TimeoutError" || err.name === "AbortError"
           ? "อัปโหลดไม่เสร็จใน 60 วินาที ลองเลือกรูปใหม่" : err.message;
-        patch(added[i].key, { phase: null, error: `อัปโหลดไม่สำเร็จ: ${msg}` });
+        patch(key, { phase: null, error: `อัปโหลดไม่สำเร็จ: ${msg}` });
       }
-    }
+    };
+    // a few at a time (the server reads in the background); the rest wait as "waiting", not "shrinking"
+    let next = 0;
+    const worker = async () => {
+      while (next < list.length) {
+        const i = next++;
+        await one(list[i], added[i].key);
+      }
+    };
+    await Promise.all(Array.from({ length: UPLOADS_AT_ONCE }, worker));
   };
 
   const reread = async (s: Shot) => {
