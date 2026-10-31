@@ -1,8 +1,10 @@
 """Fund accounts: funds in an investment account that holds no cash. Buys are paid by a transfer from
 the bank (new or linked), sells go out to an account, switches move between funds; average cost, NAV,
 history, and per-user isolation."""
+from datetime import date
 from decimal import Decimal
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
@@ -10,6 +12,8 @@ from sqlalchemy import text
 from app import auth
 from app.auth import Principal, require_user
 from app.main import app
+from app.routers.funds import get_nav_source
+from funds.nav import FakeNav, FinnomenaNav, FundNotListed, NavError
 
 BANK = 1  # KBank ใช้จ่าย
 
@@ -227,3 +231,113 @@ def test_funds_are_private(api, db, port):
     assert api.post("/funds/switches", json={"from_fund_id": fund, "to_fund_id": kid_fund, "trade_date": "2026-10-10",
                                              "amount": "1", "units_out": "1", "units_in": "1"}).status_code == 404
     assert rows(db, "SELECT count(*) FROM ledger.fund_trades WHERE user_id = :k", k=kid) == [(0,)]
+
+
+@pytest.fixture
+def nav():
+    fake = FakeNav({"K-USA-A(A)": [(date(2026, 10, 1), Decimal("10.0000")), (date(2026, 10, 2), Decimal("10.5000")),
+                                   (date(2026, 10, 29), Decimal("12.3456"))],
+                    "B-CHINAARMF": [(date(2026, 10, 29), Decimal("7.9427"))]},
+                   names={"B-CHINAARMF": "กองทุนเปิดบัวหลวงหุ้นจีนเอแชร์เพื่อการเลี้ยงชีพ"})
+    app.dependency_overrides[get_nav_source] = lambda: fake
+    yield fake
+
+
+def test_new_fund_gets_name_and_nav_from_finnomena(api, port, nav):
+    acc, _ = port
+    f = api.post("/funds", json={"account_id": acc, "code": "B-CHINAARMF"}).json()
+    assert (f["lookup"], f["name"], f["nav"], f["nav_date"], f["nav_source"]) == \
+        ("found", "กองทุนเปิดบัวหลวงหุ้นจีนเอแชร์เพื่อการเลี้ยงชีพ", 7.9427, "2026-10-29", "finnomena")
+    # a code Finnomena does not list is still recorded, without a NAV
+    f = api.post("/funds", json={"account_id": acc, "code": "PRIVATE-FUND"}).json()
+    assert (f["lookup"], f["nav"], f["nav_source"]) == ("not_listed", None, None)
+
+
+def test_value_is_units_times_fetched_nav(api, port, nav):
+    acc, fund = port
+    buy(api, fund, "1000", "100", day="2026-10-01", held_before=True)
+    r = api.post("/funds/refresh-nav").json()
+    assert [(u["code"], u["nav"], u["nav_date"]) for u in r["updated"]] == [("K-USA-A(A)", 12.3456, "2026-10-29")]
+    f = account(api, acc)["funds"][0]
+    assert (f["nav"], f["nav_source"], f["market_value"], f["unrealized"]) == (12.3456, "finnomena", 1234.56, 234.56)
+
+
+def test_refresh_keeps_a_newer_nav_typed_by_the_user_and_reports_failures(api, port, nav):
+    acc, fund = port
+    api.patch(f"/funds/{fund}", json={"nav": "13", "nav_date": "2026-10-30"})
+    other = api.post("/funds", json={"account_id": acc, "code": "GONE-FUND"}).json()["id"]
+    r = api.post("/funds/refresh-nav").json()
+    assert r["updated"] == [] and [(x["fund_id"], x["code"]) for x in r["failed"]] == [(other, "GONE-FUND")]
+    assert account(api, acc)["funds"][1]["nav_source"] == "user"   # sorted by code: GONE-FUND, K-USA-A(A)
+    # hidden funds are not fetched
+    api.patch(f"/funds/{other}", json={"is_active": False})
+    assert api.post("/funds/refresh-nav").json()["failed"] == []
+
+
+def test_nav_on_a_trade_date_uses_the_business_day_before_a_holiday(api, nav):
+    nav_of = lambda code, day: api.get("/funds/nav", params={"code": code, "date": day})   # noqa: E731
+    assert nav_of("K-USA-A(A)", "2026-10-02").json()["nav"] == 10.5
+    r = nav_of("K-USA-A(A)", "2026-10-04").json()   # Sunday
+    assert (r["date"], r["nav"]) == ("2026-10-02", 10.5)
+    assert nav_of("K-USA-A(A)", "2026-09-01").status_code == 422
+    assert nav_of("NOT-A-FUND", "2026-10-02").status_code == 422
+
+
+def test_nav_endpoints_when_fetching_is_off(api, port):
+    assert api.post("/funds/refresh-nav").status_code == 503
+    assert api.get("/funds/nav", params={"code": "K-USA-A(A)", "date": "2026-10-02"}).status_code == 503
+
+
+def test_buy_a_fund_not_recorded_yet_by_its_code(api, db, port, nav):
+    acc, _ = port
+    r = api.post("/funds/trades", json={"account_id": acc, "fund_code": "B-CHINAARMF", "side": "buy",
+                                        "trade_date": "2026-10-29", "units": "1259.0177", "amount": "10000",
+                                        "counter_account_id": BANK})
+    assert r.status_code == 201
+    f = [f for f in account(api, acc)["funds"] if f["code"] == "B-CHINAARMF"][0]
+    assert (f["id"], f["name"], f["units"], f["nav_source"]) == \
+        (r.json()["fund_id"], "กองทุนเปิดบัวหลวงหุ้นจีนเอแชร์เพื่อการเลี้ยงชีพ", 1259.0177, "finnomena")
+    # the same code again buys more of the same fund
+    r2 = api.post("/funds/trades", json={"account_id": acc, "fund_code": "B-CHINAARMF", "side": "buy",
+                                         "trade_date": "2026-10-30", "units": "10", "amount": "80", "held_before": True})
+    assert r2.json()["fund_id"] == r.json()["fund_id"]
+    # a failed trade leaves no new fund behind
+    bad = api.post("/funds/trades", json={"account_id": acc, "fund_code": "B-INNOTECH", "side": "buy",
+                                          "trade_date": "2026-10-30", "units": "1", "amount": "1"})
+    assert bad.status_code == 422 and rows(db, "SELECT id FROM ledger.funds WHERE code = 'B-INNOTECH'") == []
+    assert api.post("/funds/trades", json={"fund_id": r.json()["fund_id"], "account_id": acc, "fund_code": "X",
+                                           "side": "buy", "trade_date": "2026-10-30", "units": "1", "amount": "1",
+                                           "held_before": True}).status_code == 422
+
+
+def test_finnomena_client_reads_the_public_fund_api():
+    seen = []
+
+    def handler(req: httpx.Request):
+        seen.append(str(req.url))
+        if req.url.path.endswith("/NOPE/latest"):
+            return httpx.Response(404, json={"status": False, "error_code": "05"})
+        if req.url.path.endswith("/BROKEN/latest"):
+            return httpx.Response(500, text="oops")
+        if req.url.path.endswith("/FLAKY/latest") and len([u for u in seen if "FLAKY" in u]) == 1:
+            return httpx.Response(502, text="bad gateway")
+        if req.url.path.endswith("/latest"):
+            return httpx.Response(200, json={"status": True, "data": {"short_code": "SCBS&P500",
+                                                                      "date": "2026-10-29T00:00:00Z", "value": 29.1027}})
+        if req.url.path.endswith("/nav/q"):
+            return httpx.Response(200, json={"status": True, "data": {"navs": [
+                {"date": "2026-10-28T00:00:00Z", "value": 29.2}, {"date": "2026-10-27T00:00:00Z", "value": 29.0}]}})
+        return httpx.Response(200, json={"status": True, "data": {"name_th": "ไทยพาณิชย์ S&P500", "name_en": "SCB S&P500"}})
+
+    src = FinnomenaNav("https://example.test/funds", backoff=0, transport=httpx.MockTransport(handler))
+    assert src.latest("SCBS&P500") == (date(2026, 10, 29), Decimal("29.1027"))
+    assert seen[-1] == "https://example.test/funds/SCBS%26P500/latest"
+    assert src.name("SCBS&P500") == "ไทยพาณิชย์ S&P500"
+    assert src.history("X", date.today()) == [(date(2026, 10, 27), Decimal("29.0")), (date(2026, 10, 28), Decimal("29.2"))]
+    assert seen[-1].endswith("/X/nav/q?range=1W")
+    with pytest.raises(FundNotListed):
+        src.latest("NOPE")
+    with pytest.raises(NavError):
+        src.latest("BROKEN")
+    assert len([u for u in seen if "BROKEN" in u]) == 3
+    assert src.latest("FLAKY") == (date(2026, 10, 29), Decimal("29.1027"))   # a 502, then the answer

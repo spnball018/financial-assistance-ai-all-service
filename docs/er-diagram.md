@@ -1,6 +1,6 @@
 # ER diagram: schema `ledger`
 
-สร้างจาก DB จริง (migration 0013, 2026-10-06; เพิ่ม `funds`, `fund_trades` จาก migration 0022, 2026-10-29) ถ้าเพิ่ม migration ให้อัปเดตไฟล์นี้ด้วย ส่วนตาราง `alembic_version` ไม่ได้แสดง
+สร้างจาก DB จริง (migration 0013, 2026-10-06; เพิ่ม `funds`, `fund_trades` จาก migration 0022-0023, 2026-10-31) ถ้าเพิ่ม migration ให้อัปเดตไฟล์นี้ด้วย ส่วนตาราง `alembic_version` ไม่ได้แสดง
 
 ภาพ PNG: [er-diagram.png](er-diagram.png) (render จาก Mermaid ข้างล่าง ใช้ดูใน editor ที่ไม่รองรับ Mermaid ถ้าแก้ diagram ให้ render ใหม่ด้วย `npx @mermaid-js/mermaid-cli -i <ไฟล์ .mmd> -o docs/er-diagram.png -w 2400 -b white`)
 
@@ -176,8 +176,9 @@ erDiagram
         int account_id FK "บัญชีประเภท investment"
         text code "UK ต่อผู้ใช้ร่วมกับ account_id"
         text name
-        numeric nav "NAV ล่าสุดที่ผู้ใช้ใส่"
+        numeric nav "NAV ล่าสุด (ดึงจาก Finnomena หรือใส่เอง)"
         date nav_date
+        text nav_source "user | finnomena (0023)"
         bool is_active
         timestamptz created_at
     }

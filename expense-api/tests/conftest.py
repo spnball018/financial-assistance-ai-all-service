@@ -20,6 +20,17 @@ def signed_in():
     app.dependency_overrides.pop(require_user, None)
 
 
+@pytest.fixture(autouse=True)
+def no_fund_nav():
+    """No test fetches NAVs from Finnomena; tests/test_funds.py swaps in a FakeNav where it needs one."""
+    from app.main import app
+    from app.routers.funds import get_nav_source
+
+    app.dependency_overrides[get_nav_source] = lambda: None
+    yield
+    app.dependency_overrides.pop(get_nav_source, None)
+
+
 @pytest.fixture(scope="session")
 def db_engine():
     """Engine on a throwaway database. Set TEST_DATABASE_URL (database name must contain 'test'):

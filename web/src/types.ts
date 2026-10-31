@@ -324,10 +324,10 @@ export interface FundPosition {
   units: number;
   cost: number;
   avg_cost: number | null;
-  /** latest NAV: the user's (`nav_source` user) or the last trade's when that is newer */
+  /** latest NAV: fetched from Finnomena, typed in by the user, or the last trade's when that is newer */
   nav: number | null;
   nav_date: string | null;
-  nav_source: "user" | "trade" | null;
+  nav_source: "finnomena" | "user" | "trade" | null;
   market_value: number | null;
   unrealized: number | null;
   realized: number;
@@ -386,7 +386,10 @@ export interface UnlinkedTransfer {
 }
 
 export interface FundTradeInput {
-  fund_id: number;
+  /** the fund: fund_id, or account_id + fund_code (a new code is added to the account) */
+  fund_id: number | null;
+  account_id?: number;
+  fund_code?: string;
   side: "buy" | "sell";
   trade_date: string;
   units: string;
@@ -406,4 +409,15 @@ export interface FundSwitchInput {
   units_out: string;
   units_in: string;
   note: string | null;
+}
+
+export interface NavRefresh {
+  updated: { fund_id: number; code: string; nav: number; nav_date: string }[];
+  failed: { fund_id: number; code: string; error: string }[];
+}
+
+export interface TradeNav {
+  code: string;
+  date: string;
+  nav: number;
 }

@@ -1,13 +1,8 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
 import { fmtMoney, fmtUnits, fmtWhen } from "./format";
+import { bangkokDate, finnomenaUrl, FundTradeForm, navOff, todayInBangkok, type Prefill } from "./FundTradeForm";
 import type { Account, FundAccount, FundPosition, FundTrade, UnlinkedTransfer } from "./types";
-
-function todayInBangkok(): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok" }).format(new Date());
-}
-
-const bangkokDate = (iso: string) => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok" }).format(new Date(iso));
 
 const gainClass = (n: number | null) => (n === null || Math.abs(n) < 0.005 ? "" : n < 0 ? "neg" : "ok-text");
 
@@ -59,255 +54,6 @@ function NavEditor({ fund, onSaved }: { fund: FundPosition; onSaved: () => void 
       </button>
       {error && <div className="error-text small">{error}</div>}
     </div>
-  );
-}
-
-function AddFund({ accountId, onSaved }: { accountId: number; onSaved: () => void }) {
-  const [code, setCode] = useState("");
-  const [name, setName] = useState("");
-  const [error, setError] = useState<string | null>(null);
-
-  const add = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    try {
-      await api.createFund({ account_id: accountId, code: code.trim(), name: name.trim() || null });
-      setCode("");
-      setName("");
-      onSaved();
-    } catch (err) {
-      setError((err as Error).message);
-    }
-  };
-
-  return (
-    <form className="opening add-fund" onSubmit={add}>
-      <input placeholder="รหัสกองทุน เช่น K-USA-A(A)" value={code} onChange={(e) => setCode(e.target.value)} aria-label="รหัสกองทุน" />
-      <input placeholder="ชื่อ (ไม่บังคับ)" value={name} onChange={(e) => setName(e.target.value)} aria-label="ชื่อกองทุน" />
-      <button type="submit" disabled={!code.trim()}>
-        เพิ่มกองทุน
-      </button>
-      {error && <span className="error-text small">{error}</span>}
-    </form>
-  );
-}
-
-type Side = "buy" | "sell" | "switch";
-/** Starts the trade form from a transfer that no trade points at yet. */
-export interface Prefill {
-  side: "buy" | "sell";
-  amount: string;
-  date: string;
-  transactionId: number;
-}
-
-const HELD = "held";
-
-function TradeForm({ port, accounts, unlinked, prefill, onSaved }: {
-  port: FundAccount;
-  accounts: Account[];
-  unlinked: UnlinkedTransfer[];
-  prefill: Prefill | null;
-  onSaved: () => void;
-}) {
-  const [side, setSide] = useState<Side>(prefill?.side ?? "buy");
-  const [fundId, setFundId] = useState<number | "">("");
-  const [toFundId, setToFundId] = useState<number | "">("");
-  const [date, setDate] = useState(prefill?.date ?? todayInBangkok());
-  const [amount, setAmount] = useState(prefill?.amount ?? "");
-  const [units, setUnits] = useState("");
-  const [unitsIn, setUnitsIn] = useState("");
-  const [nav, setNav] = useState("");
-  // "acc:<id>" = create the transfer, "txn:<id>" = an existing transfer, "held" = held before the ledger
-  const [money, setMoney] = useState(prefill ? `txn:${prefill.transactionId}` : "");
-  const [note, setNote] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const active = port.funds.filter((f) => f.is_active);
-  const funds = side === "buy" ? active : port.funds.filter((f) => f.units > 0);
-  const others = accounts.filter((a) => a.is_active && a.id !== port.account_id);
-  const transfers = unlinked.filter((u) => (side === "buy" ? u.amount > 0 : u.amount < 0));
-  const navHint = Number(amount) > 0 && Number(units) > 0 ? (Number(amount) / Number(units)).toFixed(4) : "";
-  const held = port.funds.find((f) => f.id === fundId)?.units;
-  const valid =
-    fundId !== "" &&
-    Number(amount) > 0 &&
-    Number(units) > 0 &&
-    date !== "" &&
-    (side === "switch" ? toFundId !== "" && toFundId !== fundId && Number(unitsIn) > 0 : money !== "");
-
-  const pickTransfer = (value: string) => {
-    setMoney(value);
-    // a linked transfer must be the same amount: start from it
-    const t = unlinked.find((u) => `txn:${u.transaction_id}` === value);
-    if (t) {
-      setAmount(String(Math.abs(t.amount)));
-      setDate(bangkokDate(t.occurred_at));
-    }
-  };
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!valid) return;
-    setSaving(true);
-    setError(null);
-    try {
-      if (side === "switch") {
-        await api.addFundSwitch({
-          from_fund_id: Number(fundId),
-          to_fund_id: Number(toFundId),
-          trade_date: date,
-          amount,
-          units_out: units,
-          units_in: unitsIn,
-          note: note.trim() || null,
-        });
-      } else {
-        const [kind, id] = money.split(":");
-        await api.addFundTrade({
-          fund_id: Number(fundId),
-          side,
-          trade_date: date,
-          amount,
-          units,
-          nav: nav || null,
-          counter_account_id: kind === "acc" ? Number(id) : null,
-          transaction_id: kind === "txn" ? Number(id) : null,
-          held_before: money === HELD,
-          note: note.trim() || null,
-        });
-      }
-      setAmount("");
-      setUnits("");
-      setUnitsIn("");
-      setNav("");
-      setNote("");
-      setMoney("");
-      onSaved();
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <form onSubmit={submit} className="form-grid trade-form">
-      <div className="tabs full" role="radiogroup">
-        {(["buy", "sell", "switch"] as const).map((s) => (
-          <button
-            type="button"
-            key={s}
-            role="radio"
-            aria-checked={side === s}
-            className={side === s ? "tab active" : "tab"}
-            onClick={() => {
-              setSide(s);
-              setMoney("");
-            }}
-          >
-            {{ buy: "ซื้อ", sell: "ขาย", switch: "สับเปลี่ยน" }[s]}
-          </button>
-        ))}
-      </div>
-      <label>
-        {side === "switch" ? "จากกองทุน" : "กองทุน"}
-        <select value={fundId} onChange={(e) => setFundId(e.target.value ? Number(e.target.value) : "")} required>
-          <option value="">— เลือกกองทุน —</option>
-          {funds.map((f) => (
-            <option key={f.id} value={f.id}>
-              {f.code}
-              {f.name ? ` · ${f.name}` : ""}
-            </option>
-          ))}
-        </select>
-      </label>
-      {side === "switch" ? (
-        <label>
-          ไปกองทุน
-          <select value={toFundId} onChange={(e) => setToFundId(e.target.value ? Number(e.target.value) : "")} required>
-            <option value="">— เลือกกองทุน —</option>
-            {active.filter((f) => f.id !== fundId).map((f) => (
-              <option key={f.id} value={f.id}>
-                {f.code}
-                {f.name ? ` · ${f.name}` : ""}
-              </option>
-            ))}
-          </select>
-        </label>
-      ) : (
-        <label>
-          {side === "buy" ? "เงินที่ใช้ซื้อมาจาก" : "เงินที่ขายได้เข้า"}
-          <select value={money} onChange={(e) => pickTransfer(e.target.value)} required>
-            <option value="">— เลือก —</option>
-            <optgroup label="บันทึกการโอนให้ด้วย">
-              {others.map((a) => (
-                <option key={a.id} value={`acc:${a.id}`}>
-                  {side === "buy" ? "โอนจาก" : "โอนเข้า"} {a.name}
-                </option>
-              ))}
-            </optgroup>
-            {transfers.length > 0 && (
-              <optgroup label="รายการโอนที่มีอยู่แล้ว">
-                {transfers.map((u) => (
-                  <option key={u.transaction_id} value={`txn:${u.transaction_id}`}>
-                    {fmtWhen(u.occurred_at, u.has_time)} · {u.other_account} · {fmtMoney(Math.abs(u.amount))}
-                  </option>
-                ))}
-              </optgroup>
-            )}
-            {side === "buy" && <option value={HELD}>ถือมาก่อนเริ่มใช้ระบบ (ไม่มีการโอน)</option>}
-          </select>
-        </label>
-      )}
-      <label>
-        วันที่ทำรายการ
-        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
-      </label>
-      <label>
-        {side === "buy" ? "จำนวนเงินที่ซื้อ (บาท)" : side === "sell" ? "เงินที่ได้จากการขาย (บาท)" : "มูลค่าที่สับเปลี่ยน (บาท)"}
-        <input
-          inputMode="decimal"
-          value={amount}
-          disabled={money.startsWith("txn:")}
-          onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, ""))}
-          placeholder="0.00"
-          required
-        />
-      </label>
-      <label>
-        {side === "switch" ? "หน่วยที่ขายออก" : "จำนวนหน่วย"}
-        <input inputMode="decimal" value={units} onChange={(e) => setUnits(e.target.value.replace(/[^\d.]/g, ""))} placeholder="0.0000" required />
-        {side !== "buy" && held !== undefined && <span className="small">ถืออยู่ {fmtUnits(held)} หน่วย</span>}
-      </label>
-      {side === "switch" ? (
-        <label>
-          หน่วยที่ได้รับ
-          <input inputMode="decimal" value={unitsIn} onChange={(e) => setUnitsIn(e.target.value.replace(/[^\d.]/g, ""))} placeholder="0.0000" required />
-        </label>
-      ) : (
-        <label>
-          NAV ต่อหน่วย
-          <input inputMode="decimal" value={nav} onChange={(e) => setNav(e.target.value.replace(/[^\d.]/g, ""))} placeholder={navHint || "ไม่บังคับ"} />
-        </label>
-      )}
-      <label className="full">
-        บันทึกเพิ่มเติม
-        <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="ไม่บังคับ" />
-      </label>
-      <p className="full muted small">
-        {side === "switch"
-          ? "สับเปลี่ยนในบัญชีเดียวกัน ไม่มีเงินเข้าหรือออกจากบัญชี NAV ของแต่ละฝั่งคำนวณจากมูลค่า ÷ หน่วย"
-          : "บัญชีกองทุนไม่มีเงินค้าง เงินที่ใช้ซื้อต้องโอนมาจากบัญชีอื่น และเงินที่ขายได้ต้องออกไปบัญชีอื่น ถ้าการโอนนั้นมาจากอีเมลธนาคารแล้ว ให้เลือกจาก \"รายการโอนที่มีอยู่แล้ว\" จะได้ไม่บันทึกซ้ำ"}
-      </p>
-      <div className="full actions">
-        <button className="primary" type="submit" disabled={!valid || saving}>
-          {saving ? "กำลังบันทึก…" : { buy: "บันทึกการซื้อ", sell: "บันทึกการขาย", switch: "บันทึกการสับเปลี่ยน" }[side]}
-        </button>
-        {error && <span className="error-text small">{error}</span>}
-      </div>
-    </form>
   );
 }
 
@@ -414,6 +160,8 @@ export function FundsPage({ accounts }: { accounts: Account[] }) {
   const [prefill, setPrefill] = useState<Prefill | null>(null);
   const [showHidden, setShowHidden] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [navNote, setNavNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const [fetching, setFetching] = useState(false);
 
   const port = ports?.find((p) => p.account_id === accountId) ?? null;
 
@@ -424,7 +172,30 @@ export function FundsPage({ accounts }: { accounts: Account[] }) {
       setAccountId((cur) => cur ?? p.find((a) => a.is_active)?.account_id ?? p[0]?.account_id ?? null);
     }, (e: Error) => setError(e.message));
   };
-  useEffect(load, []);
+  /** Latest NAVs from Finnomena; quiet = on opening the page, only failures are shown. */
+  const refreshNavs = async (quiet: boolean) => {
+    setFetching(true);
+    try {
+      const r = await api.refreshFundNavs();
+      setNavNote(
+        r.failed.length > 0
+          ? { ok: false, text: `ดึง NAV ไม่ได้: ${r.failed.map((f) => `${f.code} (${f.error})`).join(", ")}` }
+          : quiet
+            ? null
+            : { ok: true, text: `อัปเดต NAV แล้ว ${r.updated.length} กองทุน` },
+      );
+      if (r.updated.length > 0) load();
+    } catch (e) {
+      if (!navOff(e)) setNavNote({ ok: false, text: `ดึง NAV ไม่ได้: ${(e as Error).message}` });
+    } finally {
+      setFetching(false);
+    }
+  };
+  useEffect(() => {
+    load();
+    refreshNavs(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   useEffect(() => {
     if (accountId === null) return;
     api.fundHistory(accountId).then((h) => {
@@ -454,7 +225,8 @@ export function FundsPage({ accounts }: { accounts: Account[] }) {
     if (confirm(`ลบ${tradeLabel(t)} ${fmtMoney(t.amount)}?${extra}`)) run(() => api.deleteFundTrade(t.id));
   };
   const record = (u: UnlinkedTransfer) => {
-    setPrefill({ side: u.amount > 0 ? "buy" : "sell", amount: String(Math.abs(u.amount)), date: bangkokDate(u.occurred_at), transactionId: u.transaction_id });
+    if (accountId === null) return;
+    setPrefill({ side: u.amount > 0 ? "buy" : "sell", accountId, amount: String(Math.abs(u.amount)), date: bangkokDate(u.occurred_at), transactionId: u.transaction_id });
     document.querySelector(".trade-form")?.scrollIntoView({ behavior: "smooth" });
   };
 
@@ -462,10 +234,13 @@ export function FundsPage({ accounts }: { accounts: Account[] }) {
   if (ports.length === 0)
     return (
       <section>
-        <h2>กองทุน</h2>
-        <p className="muted">
-          ยังไม่มีบัญชีกองทุน ไปที่ <a href="#settings">ตั้งค่า</a> → บัญชี แล้วเพิ่มบัญชีประเภท "ลงทุน" (เช่น หนึ่งบัญชีต่อ บลจ.)
+        <h2>ซื้อกองทุน</h2>
+        <p className="muted small">
+          ยังไม่มีบัญชีกองทุน บันทึกการซื้อครั้งแรกได้เลย: ตั้งชื่อบัญชีกองทุน (เช่น หนึ่งบัญชีต่อ บลจ.) ใส่รหัสกองทุน ยอดเงิน และบัญชีที่โอนเงินไปซื้อ
+          ถ้ามีกองทุนอยู่ก่อนแล้ว เลือกแท็บ "ยอดที่มีอยู่แล้ว"
         </p>
+        {error && <div className="message error">{error}</div>}
+        <FundTradeForm ports={[]} accounts={accounts} onSaved={load} />
       </section>
     );
 
@@ -487,15 +262,19 @@ export function FundsPage({ accounts }: { accounts: Account[] }) {
         )}
         {ports.length === 1 && <span className="muted">{ports[0].name}</span>}
         <div className="spacer" />
+        <button onClick={() => refreshNavs(false)} disabled={fetching}>
+          {fetching ? "กำลังดึง NAV…" : "ดึง NAV ล่าสุด"}
+        </button>
         <label className="small muted">
           <input type="checkbox" checked={showHidden} onChange={(e) => setShowHidden(e.target.checked)} /> แสดงกองทุนที่ซ่อน
         </label>
       </div>
       <p className="muted small">
-        เงินที่โอนเข้าบัญชีกองทุนเป็นการโอนระหว่างบัญชีตัวเอง ไม่นับเป็นรายจ่าย ต้นทุนคิดแบบเฉลี่ย มูลค่าใช้ NAV ล่าสุดที่บันทึก
-        (หรือ NAV ของรายการซื้อขายล่าสุดถ้าใหม่กว่า)
+        เงินที่โอนเข้าบัญชีกองทุนเป็นการโอนระหว่างบัญชีตัวเอง ไม่นับเป็นรายจ่าย ต้นทุนคิดแบบเฉลี่ย มูลค่า = จำนวนหน่วย × NAV ล่าสุด
+        ซึ่งดึงจาก Finnomena ตามรหัสกองทุนทุกครั้งที่เปิดหน้านี้ (หรือ NAV ของรายการซื้อขายล่าสุดถ้าใหม่กว่า)
       </p>
       {error && <div className="message error">{error}</div>}
+      {navNote && <div className={navNote.ok ? "message ok" : "message warn"}>{navNote.text}</div>}
 
       {port && (
         <>
@@ -524,6 +303,18 @@ export function FundsPage({ accounts }: { accounts: Account[] }) {
           </div>
 
           <Unlinked items={unlinked} onRecord={record} />
+
+          <h2>ซื้อ/ขายกองทุน</h2>
+          <FundTradeForm
+            key={prefill?.transactionId ?? ""}
+            ports={ports}
+            accounts={accounts}
+            accountId={port.account_id}
+            prefill={prefill}
+            onSaved={load}
+          />
+
+          <h2>กองทุนที่ถืออยู่</h2>
 
           <div className="table-wrap">
             <table className="funds">
@@ -566,8 +357,16 @@ export function FundsPage({ accounts }: { accounts: Account[] }) {
                       {f.nav !== null ? f.nav.toFixed(4) : "—"}
                       {f.nav_date && (
                         <div className="muted small">
-                          {fmtWhen(f.nav_date, false)}
-                          {f.nav_source === "trade" ? " (จากรายการ)" : ""}
+                          {fmtWhen(f.nav_date, false)}{" "}
+                          {f.nav_source === "finnomena" ? (
+                            <a href={finnomenaUrl(f.code)} target="_blank" rel="noreferrer">
+                              Finnomena
+                            </a>
+                          ) : f.nav_source === "trade" ? (
+                            "(จากรายการ)"
+                          ) : (
+                            "(ใส่เอง)"
+                          )}
                         </div>
                       )}
                       <NavEditor fund={f} onSaved={load} />
@@ -592,17 +391,7 @@ export function FundsPage({ accounts }: { accounts: Account[] }) {
               </tbody>
             </table>
           </div>
-          <AddFund accountId={port.account_id} onSaved={load} />
 
-          <h2>บันทึกการซื้อ/ขาย</h2>
-          <TradeForm
-            key={`${port.account_id}-${prefill?.transactionId ?? ""}`}
-            port={port}
-            accounts={accounts}
-            unlinked={unlinked}
-            prefill={prefill}
-            onSaved={load}
-          />
 
           <h2>ประวัติการซื้อขาย</h2>
           <History items={history} onDelete={deleteTrade} />

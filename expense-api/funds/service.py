@@ -16,7 +16,8 @@ record what they bought.
 
 cost   = average cost: a sell takes units * (cost / units) out of the fund's cost, and the rest of the
          proceeds is realized gain (or loss)
-value  = units * the latest NAV (the user's, or the last trade's when that is newer)
+value  = units * the latest NAV: fetched from Finnomena by the fund's code (funds.nav), typed in by the user,
+         or the last trade's when that is newer
 
 Every function takes the user id (uid) and only reads or changes that user's rows."""
 from datetime import date, datetime, time
@@ -27,6 +28,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
+from funds.nav import FundNotListed, NavError, NavSource, NoNavOn, nav_on
 from ledger import transactions as txns
 from ledger.transactions import Invalid, NotFound
 
@@ -34,7 +36,7 @@ BANGKOK = ZoneInfo("Asia/Bangkok")
 CENT = Decimal("0.01")
 NAV_PLACES = Decimal("0.0001")
 
-_FUND_COLS = "f.id, f.account_id, f.code, f.name, f.nav, f.nav_date, f.is_active"
+_FUND_COLS = "f.id, f.account_id, f.code, f.name, f.nav, f.nav_date, f.nav_source, f.is_active"
 _TRADE_COLS = ("tr.id, tr.fund_id, tr.side, tr.trade_date, tr.units, tr.amount, tr.nav, tr.funding, tr.transaction_id, "
                "tr.switched_from, tr.note")
 
@@ -68,19 +70,40 @@ def _check_nav(nav: Optional[Decimal], nav_date: Optional[date]) -> None:
         raise Invalid("nav must be positive")
 
 
+def lookup(source: Optional[NavSource], code: str) -> dict:
+    """What Finnomena knows about a fund code: {"status": "found" | "not_listed" | "error" | "off", "name",
+    "nav", "nav_date"}. Never raises: a fund can be recorded without it."""
+    if source is None:
+        return {"status": "off"}
+    try:
+        nav_date, nav = source.latest(code)
+        return {"status": "found", "name": source.name(code), "nav": nav, "nav_date": nav_date}
+    except FundNotListed:
+        return {"status": "not_listed"}
+    except NavError as e:
+        return {"status": "error", "error": str(e)}
+
+
 def create_fund(conn, uid: int, *, account_id: int, code: str, name: Optional[str] = None,
-                nav: Optional[Decimal] = None, nav_date: Optional[date] = None) -> dict:
+                nav: Optional[Decimal] = None, nav_date: Optional[date] = None,
+                found: Optional[dict] = None) -> dict:
+    """found: lookup() of the code; its name and NAV fill what the user left out."""
     _investment_account(conn, uid, account_id)
     code = code.strip()
     if not code:
         raise Invalid("code is required")
     _check_nav(nav, nav_date)
+    nav_source = "user" if nav is not None else None
+    if found and found.get("status") == "found":
+        name = name or found.get("name")
+        if nav is None:
+            nav, nav_date, nav_source = found["nav"], found["nav_date"], "finnomena"
     try:
         new_id = conn.execute(text(
-            "INSERT INTO ledger.funds (user_id, account_id, code, name, nav, nav_date) "
-            "VALUES (:uid, :a, :code, :name, :nav, :nd) RETURNING id"),
+            "INSERT INTO ledger.funds (user_id, account_id, code, name, nav, nav_date, nav_source) "
+            "VALUES (:uid, :a, :code, :name, :nav, :nd, :ns) RETURNING id"),
             {"uid": uid, "a": account_id, "code": code, "name": (name or "").strip() or None,
-             "nav": nav, "nd": nav_date}).scalar()
+             "nav": nav, "nd": nav_date, "ns": nav_source}).scalar()
     except IntegrityError as e:
         if "funds_user_account_code_key" in str(e.orig):
             raise Conflict(f"fund {code} is already in this account")
@@ -108,8 +131,8 @@ def update_fund(conn, uid: int, fund_id: int, *, fields: dict) -> dict:
     if "nav" in fields or "nav_date" in fields:
         nav, nav_date = fields.get("nav"), fields.get("nav_date")
         _check_nav(nav, nav_date)
-        sets.append("nav = :nav, nav_date = :nd")
-        params.update(nav=nav, nd=nav_date)
+        sets.append("nav = :nav, nav_date = :nd, nav_source = :ns")
+        params.update(nav=nav, nd=nav_date, ns="user" if nav is not None else None)
     if sets:
         try:
             conn.execute(text(f"UPDATE ledger.funds SET {', '.join(sets)} WHERE id = :id AND user_id = :uid"), params)
@@ -118,6 +141,54 @@ def update_fund(conn, uid: int, fund_id: int, *, fields: dict) -> dict:
                 raise Conflict(f"fund {params['code']} is already in this account")
             raise
     return get_fund(conn, uid, fund_id)
+
+
+def refresh_navs(conn, uid: int, source: NavSource, *, account_id: Optional[int] = None) -> dict:
+    """Fetch the latest NAV of every active fund (of one account, or all) from Finnomena. A NAV the user
+    typed in for a later date is kept. Returns {"updated": [...], "failed": [{"code", "error"}]}."""
+    funds = [dict(r._mapping) for r in conn.execute(text(
+        f"SELECT {_FUND_COLS} FROM ledger.funds f WHERE f.user_id = :uid AND f.is_active "
+        "AND (CAST(:a AS integer) IS NULL OR f.account_id = :a) ORDER BY f.code"), {"uid": uid, "a": account_id})]
+    fetched: dict[str, tuple[date, Decimal] | str] = {}
+    for code in {f["code"] for f in funds}:   # the same fund in two accounts is fetched once
+        try:
+            fetched[code] = source.latest(code)
+        except FundNotListed:
+            fetched[code] = "ไม่พบกองทุนนี้ใน Finnomena"
+        except NavError as e:
+            fetched[code] = str(e)
+    updated, failed = [], []
+    for f in funds:
+        got = fetched[f["code"]]
+        if isinstance(got, str):
+            failed.append({"fund_id": f["id"], "code": f["code"], "error": got})
+            continue
+        nav_date, nav = got
+        if f["nav_date"] is not None and f["nav_source"] == "user" and f["nav_date"] > nav_date:
+            continue
+        conn.execute(text("UPDATE ledger.funds SET nav = :nav, nav_date = :nd, nav_source = 'finnomena' "
+                          "WHERE id = :id AND user_id = :uid"), {"nav": nav, "nd": nav_date, "id": f["id"], "uid": uid})
+        updated.append({"fund_id": f["id"], "code": f["code"], "nav": nav, "nav_date": nav_date})
+    return {"updated": updated, "failed": failed}
+
+
+def trade_nav(source: NavSource, code: str, day: date) -> dict:
+    """A fund's NAV on a trade date (or the business day before), for the trade form to work out units
+    from the amount or the amount from units. Works for a fund not recorded yet. Raises Invalid when
+    Finnomena has none."""
+    code = code.strip()
+    try:
+        nav_date, nav = nav_on(source, code, day)
+    except FundNotListed:
+        raise Invalid(f"Finnomena has no fund {code}")
+    except NoNavOn as e:
+        raise Invalid(str(e))
+    return {"code": code, "date": nav_date, "nav": nav}
+
+
+def find_fund(conn, uid: int, account_id: int, code: str) -> Optional[int]:
+    return conn.execute(text("SELECT id FROM ledger.funds WHERE user_id = :uid AND account_id = :a AND code = :c"),
+                        {"uid": uid, "a": account_id, "c": code.strip()}).scalar()
 
 
 def delete_fund(conn, uid: int, fund_id: int) -> None:
@@ -153,7 +224,7 @@ def _position(fund: dict, trades: list[dict]) -> dict:
             cost -= out
             units -= t["units"]
         last = t
-    nav, nav_date, nav_source = fund["nav"], fund["nav_date"], "user"
+    nav, nav_date, nav_source = fund["nav"], fund["nav_date"], fund["nav_source"]
     if last is not None and (nav_date is None or last["trade_date"] > nav_date):
         nav, nav_date, nav_source = last["nav"], last["trade_date"], "trade"
     value = (units * nav).quantize(CENT) if nav is not None else None

@@ -1,4 +1,4 @@
-import type { Account, AccountInput, AccountLedger, FundAccount, FundPosition, FundSwitchInput, FundTrade, FundTradeInput, UnlinkedTransfer, ApiToken, Balance, Category, CreatedApiToken, EmailSource, GmailStatus, Me, MerchantRule, User, Receipt, TransferMatch, ConfirmResult, Status, Summary, SyncResult, Txn, TxnDetails, ReportExpense, ReportIncome, WalletApplyResult, WalletEntry, WalletScreenshot } from "./types";
+import type { Account, AccountInput, AccountLedger, FundAccount, FundPosition, FundSwitchInput, FundTrade, FundTradeInput, NavRefresh, TradeNav, UnlinkedTransfer, ApiToken, Balance, Category, CreatedApiToken, EmailSource, GmailStatus, Me, MerchantRule, User, Receipt, TransferMatch, ConfirmResult, Status, Summary, SyncResult, Txn, TxnDetails, ReportExpense, ReportIncome, WalletApplyResult, WalletEntry, WalletScreenshot } from "./types";
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -151,11 +151,13 @@ export const api = {
   txnEmail: async (id: number) => (await send(`/transactions/${id}/email`)).text(),
   fundPortfolio: () => call<FundAccount[]>("/funds/portfolio"),
   createFund: (body: { account_id: number; code: string; name: string | null }) =>
-    call<FundPosition>("/funds", { method: "POST", body: JSON.stringify(body) }),
+    call<FundPosition & { lookup: "found" | "not_listed" | "error" | "off" | "skipped" }>("/funds", { method: "POST", body: JSON.stringify(body) }),
+  refreshFundNavs: () => call<NavRefresh>("/funds/refresh-nav", { method: "POST" }),
+  fundNav: (code: string, date: string) => call<TradeNav>(`/funds/nav?code=${encodeURIComponent(code)}&date=${date}`),
   updateFund: (id: number, body: { code?: string; name?: string | null; is_active?: boolean; nav?: string | null; nav_date?: string | null }) =>
     call<FundPosition>(`/funds/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   deleteFund: (id: number) => noContent(`/funds/${id}`, { method: "DELETE" }),
-  addFundTrade: (body: FundTradeInput) => call<unknown>("/funds/trades", { method: "POST", body: JSON.stringify(body) }),
+  addFundTrade: (body: FundTradeInput) => call<FundTrade>("/funds/trades", { method: "POST", body: JSON.stringify(body) }),
   deleteFundTrade: (id: number) => noContent(`/funds/trades/${id}`, { method: "DELETE" }),
   addFundSwitch: (body: FundSwitchInput) => call<unknown>("/funds/switches", { method: "POST", body: JSON.stringify(body) }),
   fundHistory: (accountId: number) =>

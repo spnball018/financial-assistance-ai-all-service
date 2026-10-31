@@ -1,8 +1,12 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "./api";
 import { fmtMoney, fmtWhen } from "./format";
+import { FundTradeForm } from "./FundTradeForm";
 import { TxnDetailPanel } from "./TxnDetailPanel";
-import type { Account, Category, Txn } from "./types";
+import type { Account, Category, FundAccount, Txn } from "./types";
+
+type Kind = "expense" | "income" | "transfer" | "fund";
+const KIND_LABEL: Record<Kind, string> = { expense: "รายจ่าย", income: "รายรับ", transfer: "โอนเข้าบัญชีตัวเอง", fund: "ซื้อ/ขายกองทุน" };
 
 function nowInBangkok(): { date: string; time: string } {
   const p = Object.fromEntries(
@@ -17,7 +21,13 @@ function nowInBangkok(): { date: string; time: string } {
 /** Cash, TrueMoney, income, a move between own accounts... anything without an email. Saved as confirmed right away. */
 export function ManualEntryPage({ categories, accounts }: { categories: Category[]; accounts: Account[] }) {
   const start = nowInBangkok();
-  const [kind, setKind] = useState<"expense" | "income" | "transfer">("expense");
+  const [kind, setKind] = useState<Kind>("expense");
+  const [ports, setPorts] = useState<FundAccount[] | null>(null);
+  const loadPorts = () => api.fundPortfolio().then(setPorts, (e: Error) => setError(e.message));
+  useEffect(() => {
+    if (kind === "fund" && ports === null) loadPorts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kind]);
   const [toAccountId, setToAccountId] = useState<number | "">("");
   const [accountId, setAccountId] = useState<number | "">("");
   const [amount, setAmount] = useState("");
@@ -55,7 +65,7 @@ export function ManualEntryPage({ categories, accounts }: { categories: Category
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!valid) return;
+    if (!valid || kind === "fund") return;
     setSaving(true);
     setError(null);
     try {
@@ -81,6 +91,39 @@ export function ManualEntryPage({ categories, accounts }: { categories: Category
     }
   };
 
+  const tabs = (
+    <div className="tabs full" role="radiogroup">
+      {(["expense", "income", "transfer", "fund"] as const).map((k) => (
+        <button
+          type="button"
+          key={k}
+          role="radio"
+          aria-checked={kind === k}
+          className={kind === k ? "tab active" : "tab"}
+          onClick={() => {
+            setKind(k);
+            setCategoryId("");
+          }}
+        >
+          {KIND_LABEL[k]}
+        </button>
+      ))}
+    </div>
+  );
+
+  if (kind === "fund")
+    return (
+      <section className="manual">
+        <h2>บันทึกรายการเอง</h2>
+        <p className="muted small">
+          ซื้อกองทุน: โอนเงินจากบัญชีของคุณเข้าบัญชีกองทุน (ไม่นับเป็นรายจ่าย) แล้วได้หน่วยลงทุน ดูมูลค่าและกำไร/ขาดทุนได้ที่หน้า <a href="#funds">กองทุน</a>
+        </p>
+        <div className="manual-kind">{tabs}</div>
+        {error && <div className="message error">{error}</div>}
+        {ports === null ? <p className="muted">กำลังโหลด…</p> : <FundTradeForm ports={ports} accounts={accounts} onSaved={loadPorts} />}
+      </section>
+    );
+
   return (
     <section className="manual">
       <h2>บันทึกรายการเอง</h2>
@@ -89,23 +132,7 @@ export function ManualEntryPage({ categories, accounts }: { categories: Category
         (การโอนเข้าบัญชีตัวเองไม่นับเป็นรายจ่าย)
       </p>
       <form onSubmit={submit} className="form-grid">
-        <div className="tabs full" role="radiogroup">
-          {(["expense", "income", "transfer"] as const).map((k) => (
-            <button
-              type="button"
-              key={k}
-              role="radio"
-              aria-checked={kind === k}
-              className={kind === k ? "tab active" : "tab"}
-              onClick={() => {
-                setKind(k);
-                setCategoryId("");
-              }}
-            >
-              {{ expense: "รายจ่าย", income: "รายรับ", transfer: "โอนเข้าบัญชีตัวเอง" }[k]}
-            </button>
-          ))}
-        </div>
+        {tabs}
         <label>
           {kind === "transfer" ? "จากบัญชี" : "บัญชี"}
           <select value={accountId} onChange={(e) => setAccountId(e.target.value ? Number(e.target.value) : "")} required>

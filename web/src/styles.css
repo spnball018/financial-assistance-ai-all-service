@@ -154,10 +154,12 @@ table.balances .b-open { min-width: 380px; }
 table.funds tr.inactive td { opacity: 0.55; }
 table.funds .f-nav .opening { justify-content: flex-end; margin-top: 4px; }
 table.funds .f-nav .opening input { width: 110px; }
-.add-fund { margin: 8px 0 16px; }
-.opening.add-fund input { width: 220px; }
+.manual-kind { margin-bottom: 12px; }
+.manual-kind .tabs, .trade-form .tabs { flex-wrap: wrap; }
 .trade-form { margin-bottom: 16px; }
 .fund-unlinked { margin: 0 0 16px; }
+table.funds .f-nav a, .nav-hint a { color: var(--accent); }
+.nav-hint { margin: 0; }
 .opening { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .opening input {
   font: inherit; padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px;

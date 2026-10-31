@@ -2,17 +2,28 @@ from datetime import date
 from decimal import Decimal
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 
 from app.auth import current_user_id
 from app.db import get_engine
 from funds import service
+from funds.nav import NavError, NavSource, source_from_env
 from ledger.transactions import Invalid, NotFound
 
 router = APIRouter(tags=["funds"])
 
 NAV = Field(default=None, gt=0, max_digits=16, decimal_places=4)
+
+
+def get_nav_source() -> Optional[NavSource]:
+    return source_from_env()
+
+
+def _source(source: Optional[NavSource]) -> NavSource:
+    if source is None:
+        raise HTTPException(status_code=503, detail="fetching NAVs is turned off (FUND_NAV_URL=off)")
+    return source
 
 
 def _run(fn):
@@ -24,6 +35,8 @@ def _run(fn):
         raise HTTPException(status_code=422, detail=str(e))
     except service.Conflict as e:
         raise HTTPException(status_code=409, detail=str(e))
+    except NavError as e:
+        raise HTTPException(status_code=502, detail=str(e))
 
 
 @router.get("/funds/portfolio")
@@ -50,9 +63,31 @@ class FundPatch(BaseModel):
 
 
 @router.post("/funds", status_code=201)
-def create_fund(body: FundIn, uid: int = Depends(current_user_id)):
+def create_fund(body: FundIn, uid: int = Depends(current_user_id),
+                source: Optional[NavSource] = Depends(get_nav_source)):
+    """Looks the code up on Finnomena (before touching the database) for the name and latest NAV the body
+    leaves out. `lookup` in the response: found | not_listed | error | off; the fund is created either way."""
+    found = service.lookup(source, body.code.strip()) if body.name is None or body.nav is None else None
     with get_engine().begin() as conn:
-        return _run(lambda: service.create_fund(conn, uid, **body.model_dump()))
+        fund = _run(lambda: service.create_fund(conn, uid, **body.model_dump(), found=found))
+    return {**fund, "lookup": found["status"] if found else "skipped"}
+
+
+@router.post("/funds/refresh-nav")
+def refresh_nav(account_id: Optional[int] = None, uid: int = Depends(current_user_id),
+                source: Optional[NavSource] = Depends(get_nav_source)):
+    """Fetch the latest NAV of every active fund (or those of one account) from Finnomena."""
+    src = _source(source)
+    with get_engine().begin() as conn:
+        return _run(lambda: service.refresh_navs(conn, uid, src, account_id=account_id))
+
+
+@router.get("/funds/nav")
+def trade_nav(code: str = Query(min_length=1, max_length=50), on: date = Query(alias="date"),
+              uid: int = Depends(current_user_id), source: Optional[NavSource] = Depends(get_nav_source)):
+    """A fund's NAV on a date (or the business day before) from Finnomena, by code, for working out units.
+    The fund need not be recorded yet."""
+    return _run(lambda: service.trade_nav(_source(source), code, on))
 
 
 @router.patch("/funds/{fund_id}")
@@ -72,7 +107,10 @@ def delete_fund(fund_id: int, uid: int = Depends(current_user_id)):
 
 
 class TradeIn(BaseModel):
-    fund_id: int
+    # the fund: fund_id, or account_id + fund_code (a code not in the account yet is added, looked up on Finnomena)
+    fund_id: Optional[int] = None
+    account_id: Optional[int] = None
+    fund_code: Optional[str] = Field(None, min_length=1, max_length=50)
     side: Literal["buy", "sell"]
     trade_date: date
     units: Decimal = Field(gt=0, max_digits=20, decimal_places=4)
@@ -86,9 +124,25 @@ class TradeIn(BaseModel):
 
 
 @router.post("/funds/trades", status_code=201)
-def add_trade(body: TradeIn, uid: int = Depends(current_user_id)):
+def add_trade(body: TradeIn, uid: int = Depends(current_user_id),
+              source: Optional[NavSource] = Depends(get_nav_source)):
+    """A new fund (account_id + fund_code) and its first trade are saved together, or neither is."""
+    trade = body.model_dump(exclude={"account_id", "fund_code"})
+    if (body.fund_id is None) == (body.account_id is None or body.fund_code is None):
+        raise HTTPException(status_code=422, detail="give fund_id, or account_id and fund_code")
+    found = None
+    if body.fund_id is None:
+        with get_engine().connect() as conn:
+            exists = service.find_fund(conn, uid, body.account_id, body.fund_code)
+        if exists is None:   # look the new code up before the transaction, not inside it
+            found = service.lookup(source, body.fund_code.strip())
     with get_engine().begin() as conn:
-        return _run(lambda: service.add_trade(conn, uid, **body.model_dump()))
+        def run():
+            if body.fund_id is None:
+                trade["fund_id"] = service.find_fund(conn, uid, body.account_id, body.fund_code) or \
+                    service.create_fund(conn, uid, account_id=body.account_id, code=body.fund_code, found=found)["id"]
+            return service.add_trade(conn, uid, **trade)
+        return _run(run)
 
 
 class SwitchIn(BaseModel):
