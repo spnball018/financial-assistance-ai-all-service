@@ -40,8 +40,8 @@ def db_engine():
 @pytest.fixture
 def db(db_engine):
     with db_engine.begin() as conn:
-        conn.execute(text("TRUNCATE ledger.transactions, ledger.raw_emails, ledger.sync_runs, ledger.wallet_screenshots "
-                          "RESTART IDENTITY CASCADE"))
+        conn.execute(text("TRUNCATE ledger.transactions, ledger.raw_emails, ledger.sync_runs, ledger.wallet_screenshots, "
+                          "ledger.fund_trades, ledger.funds RESTART IDENTITY CASCADE"))
         # users other than 1 (from auth tests) and everything they own
         for t in ("receipts", "merchant_memory", "settings", "ecommerce_orders", "email_sources", "accounts"):
             conn.execute(text(f"DELETE FROM ledger.{t} WHERE user_id > 1"))

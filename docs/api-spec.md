@@ -376,6 +376,73 @@ Body `{"entries": [...]}` (รายการที่ผู้ใช้แก�
 ```
 `status` ของ top-up: `linked | already | not_found | ambiguous | confirmed` (`confirmed` = รายการธนาคารที่ผู้ใช้ตัดสินใจแล้ว ไม่แตะ)
 
+### บัญชีกองทุน (migration 0022)
+
+บัญชีกองทุนคือบัญชี `type = investment` (เช่น หนึ่งบัญชีต่อ บลจ.) บันทึกเองทั้งหมด (`funds/service.py`) **บัญชีกองทุนไม่มีเงินค้าง** เงินที่โอนเข้าคือเงินซื้อ และเงินที่ขายได้ต้องออกไปบัญชีอื่น การโอนเข้าและออกยังเป็น transfer ใน `transactions` ตามปกติ (ไม่นับเป็นรายจ่าย) รายการซื้อขายแต่ละรายการระบุที่มาหรือปลายทางของเงิน (`funding`):
+- `new_transfer`: สร้าง transfer พร้อมรายการ และลบไปพร้อมกัน
+- `linked_transfer`: ผูกกับ transfer ที่มีอยู่แล้ว ยอดต้องเท่ากัน เช่น อีเมล KBank ที่ตั้งเป็นโอนเข้าบัญชีกองทุน (1 transfer ผูกได้ 1 รายการ)
+- `held_before`: หน่วยที่ถือมาก่อนเริ่มใช้ระบบ ไม่มีเงินเคลื่อนไหว ใช้กับการซื้อเท่านั้น
+- `switch`: สับเปลี่ยนระหว่างกองทุนในบัญชีเดียวกัน ประกอบด้วยการขายและการซื้อยอดเท่ากัน ไม่มีเงินเคลื่อนไหว
+
+transfer เข้าหรือออกจากบัญชีกองทุนที่ยังไม่มีรายการไหนผูก จะแสดงเป็น `unlinked` ให้ผู้ใช้บันทึกว่าซื้อหรือขายอะไร
+- **ต้นทุน** ใช้วิธีถัวเฉลี่ย: ขาย `u` หน่วยจะตัดต้นทุนออก `cost × u / units` ส่วนที่เหลือของเงินที่ขายได้เป็นกำไรที่รับรู้แล้ว
+- **NAV ล่าสุด** ใช้ค่าที่ผู้ใช้ใส่ หรือ NAV ของรายการซื้อขายล่าสุดถ้ารายการนั้นใหม่กว่า (`nav_source`: `user | trade`) มูลค่า = หน่วย × NAV ปัดเป็นสตางค์
+
+#### ✅ `GET /funds/portfolio`
+ทุกบัญชี investment ของผู้ใช้
+```json
+[{"account_id": 15, "name": "KAsset", "institution": "KAsset", "is_active": true,
+  "net_deposits": 17000.0, "cost": 18572.86, "market_value": 19306.73, "unrealized": 733.87, "realized": 72.86,
+  "unlinked_transfers": 1,
+  "funds": [{"id": 1, "account_id": 15, "code": "K-USA-A(A)", "name": "เค ยูเอส", "is_active": true,
+             "units": 1000.1234, "cost": 12272.86, "avg_cost": 12.2713, "nav": 13.2051, "nav_date": "2026-10-28",
+             "nav_source": "user", "market_value": 13206.73, "unrealized": 933.87, "realized": 72.86, "trades": 3}]}]
+```
+`net_deposits` คือยอดที่หน้ายอดคงเหลือแสดงสำหรับบัญชีนี้ (transfer เข้าลบออกที่ยืนยันแล้ว) · `unrealized` ของบัญชีนับเฉพาะกองที่มี NAV
+
+#### ✅ `POST /funds` → 201 · `PATCH /funds/{id}` · `DELETE /funds/{id}` → 204
+Body `{"account_id": 15, "code": "K-USA-A(A)", "name": "เค ยูเอส", "nav": null, "nav_date": null}` บัญชีต้องเป็น investment (`422`) รหัสซ้ำในบัญชีเดียวกันได้ `409`
+- `PATCH`: `code`, `name`, `is_active`, หรือ NAV ล่าสุด (`nav` และ `nav_date` ต้องส่งคู่กัน ส่ง `nav: null` เพื่อล้างค่า)
+- `DELETE`: ลบได้เฉพาะกองที่ไม่มีรายการซื้อขาย (`409`) ถ้ามีรายการแล้วให้ซ่อนด้วย `is_active: false`
+
+#### ✅ `POST /funds/trades` → 201
+```json
+{"fund_id": 1, "side": "buy", "trade_date": "2026-10-01", "units": "800.1234", "amount": "10000.00", "nav": null,
+ "counter_account_id": 1, "transaction_id": null, "held_before": false, "note": null}
+```
+ต้องระบุที่มาของเงิน **อย่างใดอย่างหนึ่ง** เท่านั้น (ไม่ระบุ หรือระบุมากกว่าหนึ่ง ได้ `422`)
+- `counter_account_id`: ถ้าเป็นการซื้อ คือบัญชีที่โอนเงินมา ถ้าเป็นการขาย คือบัญชีที่รับเงิน ระบบสร้าง transfer แบบ manual ที่ยืนยันแล้ว `occurred_at` = 00:00 ของวันทำรายการ `has_time = false` `merchant_raw = "ซื้อกองทุน <code>"` หรือ `"ขายกองทุน <code>"`
+- `transaction_id`: transfer ที่มีอยู่แล้ว (root, ไม่ ignored) ที่เข้าบัญชีกองทุน (ถ้าซื้อ) หรือออกจากบัญชีกองทุน (ถ้าขาย) ยอดต้องเท่ากัน (`422`) transfer ที่ผูกกับรายการอื่นแล้วได้ `409`
+- `held_before: true`: ใช้กับการซื้อเท่านั้น
+- `nav` ถ้าไม่ส่ง ระบบใช้ `amount / units` (4 ตำแหน่ง) · ถ้าขายเกินหน่วยที่ถือ ณ วันนั้นได้ `422` และไม่บันทึกอะไรเลย
+
+#### ✅ `POST /funds/switches` → 201
+```json
+{"from_fund_id": 1, "to_fund_id": 2, "trade_date": "2026-10-15", "amount": "1300.00", "units_out": "100",
+ "units_in": "108.3333", "nav_out": null, "nav_in": null, "note": null}
+```
+สร้างการขาย `from` และการซื้อ `to` ยอด `amount` เท่ากัน ไม่มี transfer · กองทุนต้องอยู่ในบัญชีเดียวกัน (`422`) · คืน `{"sell": {...}, "buy": {...}}` · ถ้าย้ายระหว่างบัญชี ให้บันทึกการขายและการซื้อแยกกัน
+
+#### ✅ `DELETE /funds/trades/{id}` → 204
+- `new_transfer`: ลบ transfer ที่สร้างไว้ด้วย
+- `linked_transfer`: transfer ยังอยู่ และกลับไปอยู่ใน `unlinked`
+- `switch`: ลบฝั่งใดฝั่งหนึ่งจะลบทั้งสองฝั่ง
+
+ถ้าการลบรายการซื้อทำให้การขายที่ตามมาขายเกินหน่วยที่มี ได้ `422` · ไม่มีการแก้ไขรายการ ให้ลบแล้วบันทึกใหม่
+
+#### ✅ `GET /funds/accounts/{account_id}/history`
+รายการซื้อขายของบัญชี เรียงจากใหม่ไปเก่า พร้อม transfer ที่อยู่เบื้องหลังแต่ละรายการ และ transfer ที่ยังไม่มีรายการผูก บัญชีที่ไม่ใช่ investment ได้ `422`
+```json
+{"account_id": 15, "name": "KAsset",
+ "items": [{"id": 3, "fund_id": 2, "fund_code": "KFSDIV", "side": "buy", "trade_date": "2026-10-02", "units": 400.0,
+            "amount": 5000.0, "nav": 12.5, "funding": "linked_transfer", "transaction_id": 88, "switched_from": null,
+            "note": "DCA", "transfer_status": "confirmed", "transfer_at": "2026-10-02T02:30:00Z",
+            "other_account": "KBank ใช้จ่าย", "switch_fund_code": null}],
+ "unlinked": [{"transaction_id": 95, "occurred_at": "2026-10-27T03:05:00Z", "has_time": true, "status": "pending",
+               "amount": 2000.0, "other_account": "KBank ใช้จ่าย", "description": "บลจ.กสิกรไทย"}]}
+```
+`other_account`: บัญชีที่เงินมาจาก (ซื้อ) หรือไปที่ (ขาย) · `switch_fund_code`: กองทุนอีกฝั่งของการสับเปลี่ยน · `unlinked[].amount` บวก = เข้าบัญชีกองทุน, ลบ = ออก
+
 ### กฎต่อผู้รับ (Merchant Memory)
 
 #### ✅ `GET /merchant-rules`

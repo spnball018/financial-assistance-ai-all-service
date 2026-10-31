@@ -149,6 +149,13 @@ tr.receipt-row td { background: var(--bg); }
 .neg { color: var(--error); }
 tfoot td { font-weight: 600; border-bottom: none; }
 table.balances .b-open { min-width: 380px; }
+table.funds tr.inactive td { opacity: 0.55; }
+table.funds .f-nav .opening { justify-content: flex-end; margin-top: 4px; }
+table.funds .f-nav .opening input { width: 110px; }
+.add-fund { margin: 8px 0 16px; }
+.opening.add-fund input { width: 220px; }
+.trade-form { margin-bottom: 16px; }
+.fund-unlinked { margin: 0 0 16px; }
 .opening { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .opening input {
   font: inherit; padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px;
@@ -195,6 +202,19 @@ table.balances .b-open { min-width: 380px; }
   table.balances .b-open { min-width: 0; }
   .b-name { grid-area: name; } .b-bal { grid-area: bal; font-weight: 600; }
   .b-pend { grid-area: pend; text-align: left; } .b-open { grid-area: open; }
+  table.funds tbody tr {
+    grid-template-columns: 1fr auto;
+    grid-template-areas: "name value" "units gain" "cost nav" "act act";
+  }
+  .f-name { grid-area: name; } .f-value { grid-area: value; font-weight: 600; } .f-units { grid-area: units; text-align: left; }
+  .f-gain { grid-area: gain; } .f-cost { grid-area: cost; text-align: left; } .f-nav { grid-area: nav; }
+  .f-act { grid-area: act; text-align: right; }
+  table.movements tbody tr {
+    grid-template-columns: 1fr auto;
+    grid-template-areas: "desc amount" "date cash" "units act";
+  }
+  .m-desc { grid-area: desc; } .m-amount { grid-area: amount; font-weight: 600; } .m-date { grid-area: date; font-size: 12px; }
+  .m-cash { grid-area: cash; } .m-units { grid-area: units; text-align: left; } .m-act { grid-area: act; text-align: right; }
 }
 
 /* sign-in and access settings */

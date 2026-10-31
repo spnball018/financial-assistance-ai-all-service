@@ -3,14 +3,15 @@ import { api, ApiError, AUTH_REQUIRED } from "./api";
 import { GmailBanner } from "./AccessSettings";
 import { LoginPage } from "./LoginPage";
 import { BalancesPage } from "./BalancesPage";
+import { FundsPage } from "./FundsPage";
 import { ManualEntryPage } from "./ManualEntryPage";
 import { ReviewPage } from "./ReviewPage";
 import { SettingsPage } from "./SettingsPage";
 import { SummaryPage } from "./SummaryPage";
 import type { Account, Category, Me } from "./types";
 
-type Page = "review" | "manual" | "summary" | "balances" | "settings";
-const PAGES: Page[] = ["review", "manual", "summary", "balances", "settings"];
+type Page = "review" | "manual" | "summary" | "balances" | "funds" | "settings";
+const PAGES: Page[] = ["review", "manual", "summary", "balances", "funds", "settings"];
 
 export function App() {
   // undefined = still checking, null = signed out
@@ -82,6 +83,9 @@ function SignedIn({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
           <button className={page === "balances" ? "tab active" : "tab"} onClick={() => go("balances")}>
             ยอดคงเหลือ
           </button>
+          <button className={page === "funds" ? "tab active" : "tab"} onClick={() => go("funds")}>
+            กองทุน
+          </button>
           <button className={page === "settings" ? "tab active" : "tab"} onClick={() => go("settings")}>
             ตั้งค่า
           </button>
@@ -103,6 +107,7 @@ function SignedIn({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
         {page === "manual" && <ManualEntryPage categories={categories} accounts={accounts} />}
         {page === "summary" && <SummaryPage />}
         {page === "balances" && <BalancesPage />}
+        {page === "funds" && <FundsPage accounts={accounts} />}
         {page === "settings" && <SettingsPage me={me} />}
       </main>
     </div>

@@ -314,3 +314,96 @@ export interface GmailStatus {
   last_used_at?: string | null;
   last_error?: "expired" | "secret_key" | null;
 }
+
+export interface FundPosition {
+  id: number;
+  account_id: number;
+  code: string;
+  name: string | null;
+  is_active: boolean;
+  units: number;
+  cost: number;
+  avg_cost: number | null;
+  /** latest NAV: the user's (`nav_source` user) or the last trade's when that is newer */
+  nav: number | null;
+  nav_date: string | null;
+  nav_source: "user" | "trade" | null;
+  market_value: number | null;
+  unrealized: number | null;
+  realized: number;
+  trades: number;
+}
+
+export interface FundAccount {
+  account_id: number;
+  name: string;
+  institution: string | null;
+  is_active: boolean;
+  /** confirmed transfers in minus out (what the balances page shows) */
+  net_deposits: number;
+  cost: number;
+  market_value: number;
+  unrealized: number;
+  realized: number;
+  /** transfers into or out of the account that no trade points at yet */
+  unlinked_transfers: number;
+  funds: FundPosition[];
+}
+
+/** new_transfer: made with the trade · linked_transfer: an existing one · held_before: no money moved · switch */
+export type FundFunding = "new_transfer" | "linked_transfer" | "held_before" | "switch";
+
+export interface FundTrade {
+  id: number;
+  fund_id: number;
+  fund_code: string;
+  side: "buy" | "sell";
+  trade_date: string;
+  units: number;
+  amount: number;
+  nav: number;
+  funding: FundFunding;
+  transaction_id: number | null;
+  switched_from: number | null;
+  note: string | null;
+  transfer_status: Status | null;
+  transfer_at: string | null;
+  /** the bank account the money came from (buy) or went to (sell) */
+  other_account: string | null;
+  /** the other fund of a switch */
+  switch_fund_code: string | null;
+}
+
+export interface UnlinkedTransfer {
+  transaction_id: number;
+  occurred_at: string;
+  has_time: boolean;
+  status: Status;
+  /** + into the fund account, - out of it */
+  amount: number;
+  other_account: string;
+  description: string | null;
+}
+
+export interface FundTradeInput {
+  fund_id: number;
+  side: "buy" | "sell";
+  trade_date: string;
+  units: string;
+  amount: string;
+  nav: string | null;
+  counter_account_id: number | null;
+  transaction_id: number | null;
+  held_before: boolean;
+  note: string | null;
+}
+
+export interface FundSwitchInput {
+  from_fund_id: number;
+  to_fund_id: number;
+  trade_date: string;
+  amount: string;
+  units_out: string;
+  units_in: string;
+  note: string | null;
+}

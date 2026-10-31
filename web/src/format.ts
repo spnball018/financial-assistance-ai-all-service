@@ -2,7 +2,10 @@ const money = new Intl.NumberFormat("th-TH", { style: "currency", currency: "THB
 const dateTime = new Intl.DateTimeFormat("th-TH", { timeZone: "Asia/Bangkok", dateStyle: "medium", timeStyle: "short" });
 const dateOnly = new Intl.DateTimeFormat("th-TH", { timeZone: "Asia/Bangkok", dateStyle: "medium" });
 
+const units = new Intl.NumberFormat("th-TH", { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+
 export const fmtMoney = (n: number) => money.format(n);
+export const fmtUnits = (n: number) => units.format(n);
 export const fmtWhen = (iso: string, hasTime: boolean) => (hasTime ? dateTime : dateOnly).format(new Date(iso));
 
 /** Current month in Bangkok as YYYY-MM. */

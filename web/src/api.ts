@@ -1,4 +1,4 @@
-import type { Account, AccountInput, AccountLedger, ApiToken, Balance, Category, CreatedApiToken, EmailSource, GmailStatus, Me, MerchantRule, User, Receipt, TransferMatch, ConfirmResult, Status, Summary, SyncResult, Txn, TxnDetails, ReportExpense, ReportIncome, WalletApplyResult, WalletEntry, WalletScreenshot } from "./types";
+import type { Account, AccountInput, AccountLedger, FundAccount, FundPosition, FundSwitchInput, FundTrade, FundTradeInput, UnlinkedTransfer, ApiToken, Balance, Category, CreatedApiToken, EmailSource, GmailStatus, Me, MerchantRule, User, Receipt, TransferMatch, ConfirmResult, Status, Summary, SyncResult, Txn, TxnDetails, ReportExpense, ReportIncome, WalletApplyResult, WalletEntry, WalletScreenshot } from "./types";
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -149,4 +149,15 @@ export const api = {
   reportIncome: (month: string) => call<ReportIncome[]>(`/reports/income?month=${month}`),
   txnDetails: (id: number) => call<TxnDetails>(`/transactions/${id}/details`),
   txnEmail: async (id: number) => (await send(`/transactions/${id}/email`)).text(),
+  fundPortfolio: () => call<FundAccount[]>("/funds/portfolio"),
+  createFund: (body: { account_id: number; code: string; name: string | null }) =>
+    call<FundPosition>("/funds", { method: "POST", body: JSON.stringify(body) }),
+  updateFund: (id: number, body: { code?: string; name?: string | null; is_active?: boolean; nav?: string | null; nav_date?: string | null }) =>
+    call<FundPosition>(`/funds/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  deleteFund: (id: number) => noContent(`/funds/${id}`, { method: "DELETE" }),
+  addFundTrade: (body: FundTradeInput) => call<unknown>("/funds/trades", { method: "POST", body: JSON.stringify(body) }),
+  deleteFundTrade: (id: number) => noContent(`/funds/trades/${id}`, { method: "DELETE" }),
+  addFundSwitch: (body: FundSwitchInput) => call<unknown>("/funds/switches", { method: "POST", body: JSON.stringify(body) }),
+  fundHistory: (accountId: number) =>
+    call<{ account_id: number; name: string; items: FundTrade[]; unlinked: UnlinkedTransfer[] }>(`/funds/accounts/${accountId}/history`),
 };

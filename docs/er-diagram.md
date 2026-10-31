@@ -1,6 +1,6 @@
 # ER diagram: schema `ledger`
 
-สร้างจาก DB จริง (migration 0013, 2026-10-06) ถ้าเพิ่ม migration ให้อัปเดตไฟล์นี้ด้วย ส่วนตาราง `alembic_version` ไม่ได้แสดง
+สร้างจาก DB จริง (migration 0013, 2026-10-06; เพิ่ม `funds`, `fund_trades` จาก migration 0022, 2026-10-29) ถ้าเพิ่ม migration ให้อัปเดตไฟล์นี้ด้วย ส่วนตาราง `alembic_version` ไม่ได้แสดง
 
 ภาพ PNG: [er-diagram.png](er-diagram.png) (render จาก Mermaid ข้างล่าง ใช้ดูใน editor ที่ไม่รองรับ Mermaid ถ้าแก้ diagram ให้ render ใหม่ด้วย `npx @mermaid-js/mermaid-cli -i <ไฟล์ .mmd> -o docs/er-diagram.png -w 2400 -b white`)
 
@@ -170,6 +170,34 @@ erDiagram
         timestamptz applied_at
     }
 
+    funds {
+        int user_id FK "เจ้าของข้อมูล"
+        int id PK
+        int account_id FK "บัญชีประเภท investment"
+        text code "UK ต่อผู้ใช้ร่วมกับ account_id"
+        text name
+        numeric nav "NAV ล่าสุดที่ผู้ใช้ใส่"
+        date nav_date
+        bool is_active
+        timestamptz created_at
+    }
+
+    fund_trades {
+        int user_id FK "เจ้าของข้อมูล"
+        bigint id PK
+        int fund_id FK
+        text side "buy | sell"
+        date trade_date
+        numeric units
+        numeric amount "เงินที่จ่ายซื้อ / ได้จากการขาย"
+        numeric nav
+        text funding "new_transfer | linked_transfer | held_before | switch"
+        bigint transaction_id FK "transfer ที่จ่าย/รับเงิน (UK)"
+        bigint switched_from FK "ฝั่งซื้อของการสับเปลี่ยน -> ฝั่งขาย"
+        text note
+        timestamptz created_at
+    }
+
     sync_runs {
         int user_id FK "เจ้าของข้อมูล"
         int id PK
@@ -250,6 +278,10 @@ erDiagram
     email_sources ||..o{ raw_emails : "source (ตรรกะ ไม่มี FK)"
     accounts ||--o{ wallet_screenshots : "account_id"
     wallet_screenshots ||..o{ transactions : "raw.screenshot_id (ตรรกะ ไม่มี FK)"
+    accounts ||--o{ funds : "account_id"
+    funds ||--o{ fund_trades : "fund_id"
+    transactions |o--o| fund_trades : "transaction_id"
+    fund_trades |o--o| fund_trades : "switched_from"
     users ||--o{ accounts : "user_id (และทุกตารางข้อมูล)"
     users ||--o{ auth_sessions : "user_id"
     users ||--o| gmail_connections : "user_id"
@@ -267,6 +299,7 @@ erDiagram
 | รอจับคู่ | `ecommerce_orders`, `ecommerce_order_items` | order ของ Shopee/Lazada จากอีเมล `matched_txn_id` ชี้รายการจ่ายที่แยกเป็น order แล้ว |
 | ใบเสร็จ | `receipts` | รูปใบเสร็จและผลที่อ่านได้ ลูกที่แยกออกมาชี้กลับด้วย `transactions.receipt_id` |
 | รูปหน้าจอ wallet | `wallet_screenshots` | รูปประวัติรายการจากแอป e-wallet และผลที่อ่านได้ รายการที่บันทึกมี `source = wallet_screenshot` และ `raw.screenshot_id` |
+| กองทุน | `funds`, `fund_trades` | กองทุนในบัญชี investment และรายการซื้อ/ขาย/สับเปลี่ยน (หน่วย, ยอดเงิน, NAV) ที่บันทึกเอง บัญชีกองทุนไม่มีเงินค้าง เงินเข้า/ออกเป็น transfer ใน `transactions` และแต่ละรายการซื้อขายชี้ไปที่ transfer ของตัวเองด้วย `transaction_id` (ยกเว้น `held_before` และ `switch`) |
 | ความลับ | `settings` | ค่าที่เข้ารหัส เช่น รหัส PDF ของ KTC |
 | ผู้ใช้ | `users`, `auth_sessions`, `api_tokens`, `gmail_connections` | ผู้ใช้ (admin/member), session จาก Google sign-in และ API token เก็บแค่ sha256 ของความลับ, Gmail ของแต่ละคน (refresh token เข้ารหัส) |
 

@@ -103,7 +103,7 @@ cd ../web && npm run build
 - **nginx (`web`)** เป็นทางเข้าเดียวของ browser เสิร์ฟหน้าเว็บ และส่ง `/api/*` ต่อไป expense-api พร้อม `Host` เดิม ใส่ security headers เอง (เพราะใช้ tunnel ไม่มี Caddy)
 - **Gmail consent screen ยังเป็น Testing**: Google หมดอายุการเชื่อม Gmail ของแต่ละคนทุก 7 วัน และทุกคนต้องอยู่ในรายชื่อ test user
 - **Gemini**: `gemini-2.5-flash` ตอบ 404 สำหรับผู้ใช้ใหม่ รุ่น Flash ตัวเต็มตอบ 503 บน free tier บ่อย adapter retry ให้แล้ว
-- **migration**: ล่าสุดคือ 0016 (`wallet_screenshots`) DB `financial` และ `financial_test` บนเครื่อง dev อยู่ที่ 0016 ถ้าเพิ่ม migration ที่เปลี่ยน schema ต้องอัปเดต [er-diagram.md](er-diagram.md) (render PNG ใหม่) และ [api-spec.md](api-spec.md)
+- **migration**: ล่าสุดคือ 0022 (`funds`, `fund_trades`) DB `financial_test` บนเครื่อง dev อยู่ที่ 0022 ส่วน `financial` ต้อง `alembic upgrade head` เอง ถ้าเพิ่ม migration ที่เปลี่ยน schema ต้องอัปเดต [er-diagram.md](er-diagram.md) (render PNG ใหม่) และ [api-spec.md](api-spec.md)
 
 ## งานถัดไป
 
@@ -114,6 +114,6 @@ cd ../web && npm run build
 5. **T1.3 ส่วนที่เหลือ**: AliExpress, Temu (label `marketplace-aliexpress`, `marketplace-temu`) ต้องเพิ่มค่าใน CHECK ของ `email_sources.source`, `transactions.source`, `ecommerce_orders.platform` · Shopee/Lazada เสร็จแล้ว
 6. **T2.1 ส่วนที่เหลือ**: จับคู่ order กับบรรทัดบิล KTC (ใช้วันที่ ±2 วัน) order ที่จ่ายด้วยบัตรยังค้างอยู่
 7. **T6.7 ส่วนที่เหลือ**: จับคู่กับข้อมูลฝั่ง wallet ของ marketplace หลัง T1.3
-8. **Backlog**: ถ่ายใบเสร็จก่อนรายการเข้าแล้วจับคู่อัตโนมัติ, ย่อรูปใบเสร็จ, บัญชีกองทุน, refund, Top-up ของ KBank, chatbot ใน langgraph อ่านจาก ledger, `user:` ใน compose ของ gmail-service, ย้าย Gmail consent เป็น In production
+8. **Backlog**: ถ่ายใบเสร็จก่อนรายการเข้าแล้วจับคู่อัตโนมัติ, ย่อรูปใบเสร็จ, บัญชีกองทุนส่วนที่เหลือ (ปันผล, บัญชีหุ้นที่มีเงินสด, NAV อัตโนมัติ: ดู plan), refund, Top-up ของ KBank, chatbot ใน langgraph อ่านจาก ledger, `user:` ใน compose ของ gmail-service, ย้าย Gmail consent เป็น In production
 
 รอผู้ใช้ตัดสินใจ: ข้อ 3 และ 4
