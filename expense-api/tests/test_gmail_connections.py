@@ -61,7 +61,7 @@ def test_connect_asks_google_for_readonly_offline_access(env):
 def test_callback_stores_the_token_encrypted_and_never_returns_it(env, db, monkeypatch):
     _, kid, kid_id, _ = env
     res = _connect(kid, monkeypatch)
-    assert res.headers["location"] == "http://testserver/?gmail=connected#settings"
+    assert res.headers["location"] == "http://testserver/?gmail=connected#settings/email"
 
     status = kid("get", "/gmail/status")
     assert status.json()["connected"] is True and status.json()["gmail_address"] == "kid@gmail.com"

@@ -111,8 +111,11 @@ export function EmailSourcesSection({ accounts }: { accounts: Account[] }) {
   );
 }
 
+const RULES_PAGE = 50;
+
 export function RulesSection() {
   const [rules, setRules] = useState<MerchantRule[]>([]);
+  const [offset, setOffset] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const load = () => api.rules().then(setRules, (e: Error) => setError(e.message));
   useEffect(() => {
@@ -128,6 +131,10 @@ export function RulesSection() {
       setError((e as Error).message);
     }
   };
+
+  // after a delete the last page may be gone: show the page before it
+  const start = offset >= rules.length ? Math.max(0, Math.floor((rules.length - 1) / RULES_PAGE) * RULES_PAGE) : offset;
+  const page = rules.slice(start, start + RULES_PAGE);
 
   const describe = (r: MerchantRule) =>
     r.action === "category" ? `หมวด: ${r.category_name}` : r.action === "transfer" ? `โอน → ${r.account_name}` : "ไม่ต้องจำ (ถามทุกครั้ง)";
@@ -155,7 +162,7 @@ export function RulesSection() {
               </tr>
             </thead>
             <tbody>
-              {rules.map((r) => (
+              {page.map((r) => (
                 <tr key={r.merchant_key}>
                   <td className="c-merchant">{r.merchant_key}</td>
                   <td className="c-cat">
@@ -174,6 +181,19 @@ export function RulesSection() {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+      {rules.length > RULES_PAGE && (
+        <div className="pager">
+          <button disabled={start === 0} onClick={() => setOffset(Math.max(0, start - RULES_PAGE))}>
+            ก่อนหน้า
+          </button>
+          <span className="muted small">
+            {start + 1}–{Math.min(start + RULES_PAGE, rules.length)} จาก {rules.length}
+          </span>
+          <button disabled={start + RULES_PAGE >= rules.length} onClick={() => setOffset(start + RULES_PAGE)}>
+            ถัดไป
+          </button>
         </div>
       )}
     </section>

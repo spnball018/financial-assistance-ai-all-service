@@ -53,10 +53,10 @@ def connect(request: Request, next: Optional[str] = None, uid: int = Depends(cur
             access_type="offline", prompt="consent select_account", include_granted_scopes="false")
         # bound to this user: a callback finished in another user's session is refused
         flow = secrets.encrypt(json.dumps({"state": state, "verifier": verifier, "uid": uid,
-                                           "next": _safe_next(next or "/#settings")}))
+                                           "next": _safe_next(next or "/#settings/email")}))
     except (google_oauth.OAuthError, RuntimeError) as e:
         log.warning("gmail connect not configured: %s", e)
-        return _back("/#settings", "config")
+        return _back("/#settings/email", "config")
     res = RedirectResponse(url, status_code=303)
     res.set_cookie(FLOW_COOKIE, flow, max_age=FLOW_TTL, httponly=True, secure=auth.cookie_secure(),
                    samesite="lax", path="/")
@@ -69,7 +69,7 @@ def callback(request: Request, code: Optional[str] = None, state: Optional[str] 
     try:
         flow = json.loads(secrets.decrypt(request.cookies.get(FLOW_COOKIE) or "", ttl=FLOW_TTL))
     except (RuntimeError, ValueError):
-        return _back("/#settings", "state")
+        return _back("/#settings/email", "state")
     if error:
         return _back(flow["next"], "denied")
     if not code or not state or not hmac.compare_digest(state, flow["state"]) or flow["uid"] != uid:

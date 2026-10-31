@@ -33,7 +33,7 @@ export function GmailSection() {
     }
   };
   const msg = result ? GMAIL_RESULT[result] ?? GMAIL_RESULT.failed : null;
-  const connectHref = `/api/gmail/connect?next=${encodeURIComponent("/#settings")}`;
+  const connectHref = `/api/gmail/connect?next=${encodeURIComponent("/#settings/email")}`;
 
   return (
     <section className="settings-section">

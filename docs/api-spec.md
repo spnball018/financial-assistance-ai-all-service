@@ -145,11 +145,11 @@ Errors: `404` · `409` ชื่อซ้ำ · `422`
 ```
 `last_error`: `expired` (Google ยกเลิกสิทธิ์หรือหมดอายุ ต้องเชื่อมใหม่) | `secret_key` (`SECRET_KEY` เปลี่ยน) · ถ้ายังไม่ได้เชื่อม ได้ `{"connected": false, "uses_token_json": <true สำหรับ user 1>}`
 
-#### ✅ `GET /gmail/connect?next=/#settings`
+#### ✅ `GET /gmail/connect?next=/#settings/email`
 redirect (303) ไป Google (PKCE, `access_type=offline`, `prompt=consent`) cookie `expense_gmail_flow` ผูกกับผู้ใช้คนนี้
 
 #### ✅ `GET /gmail/callback`
-Google redirect กลับมาที่ `PUBLIC_BASE_URL/api/gmail/callback` ต้องเป็นผู้ใช้คนเดียวกับที่เริ่ม state ต้องตรง ต้องได้ scope Gmail และ refresh token แล้วจึงเก็บ จากนั้น redirect ไป `/?gmail=` `connected` | `denied` | `scope` | `state` | `config` | `failed` `#settings`
+Google redirect กลับมาที่ `PUBLIC_BASE_URL/api/gmail/callback` ต้องเป็นผู้ใช้คนเดียวกับที่เริ่ม state ต้องตรง ต้องได้ scope Gmail และ refresh token แล้วจึงเก็บ จากนั้น redirect ไป `/?gmail=` `connected` | `denied` | `scope` | `state` | `config` | `failed` `#settings/email` (แท็บ "อีเมลและบิล" ในหน้าตั้งค่า)
 
 #### ✅ `DELETE /gmail/connection` → 204
 ลบสิทธิ์ที่เก็บไว้และแจ้ง Google ให้ revoke (ถ้ายังไม่ได้เชื่อม ได้ 404)

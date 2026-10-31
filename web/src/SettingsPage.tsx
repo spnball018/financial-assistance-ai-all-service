@@ -81,7 +81,25 @@ function AccountRow({ account, onSaved }: { account: Account; onSaved: (a: Accou
   );
 }
 
+type Tab = "accounts" | "email" | "rules" | "access";
+
+const TAB_LABEL: Record<Tab, string> = {
+  accounts: "บัญชี",
+  email: "อีเมลและบิล",
+  rules: "กฎหมวดหมู่",
+  access: "การเข้าถึง",
+};
+
+/** "#settings/email" -> "email"; anything else -> the first tab. */
+function tabFromHash(tabs: Tab[]): Tab {
+  const t = location.hash.match(/^#settings\/(\w+)$/)?.[1] as Tab | undefined;
+  return t && tabs.includes(t) ? t : tabs[0];
+}
+
 export function SettingsPage({ me }: { me: Me }) {
+  // API tokens and users can only be managed from a signed-in browser session
+  const tabs: Tab[] = me.via === "session" ? ["accounts", "email", "rules", "access"] : ["accounts", "email", "rules"];
+  const [tab, setTab] = useState<Tab>(() => tabFromHash(tabs));
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [draft, setDraft] = useState<AccountInput>(EMPTY);
   const [error, setError] = useState<string | null>(null);
@@ -89,6 +107,18 @@ export function SettingsPage({ me }: { me: Me }) {
   useEffect(() => {
     api.accounts().then(setAccounts, (e: Error) => setError(e.message));
   }, []);
+
+  useEffect(() => {
+    const onHash = () => setTab(tabFromHash(tabs));
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [me.via]);
+
+  const show = (t: Tab) => {
+    setTab(t);
+    location.hash = `settings/${t}`;
+  };
 
   const add = async () => {
     setError(null);
@@ -103,87 +133,112 @@ export function SettingsPage({ me }: { me: Me }) {
 
   return (
     <section>
-      <h2>บัญชีของฉัน</h2>
-      <p className="muted small">
-        <b>เลขท้าย</b> ใช้จับคู่ว่าการโอนจาก KBank เข้าบัญชีไหนของคุณ (ไม่นับเป็นรายจ่าย) ใส่แค่เลขท้ายอย่างน้อย 4 ตัว
-        เช่น <code>7722</code> หรือ <code>x5204</code> ห้ามใส่เลขบัญชีเต็ม · บัญชีลบไม่ได้ ใช้ปิด "ใช้งาน" แทน
-      </p>
-      {error && <div className="message error">{error}</div>}
-      <div className="table-wrap">
-        <table className="settings">
-          <thead>
-            <tr>
-              <th>ชื่อ</th>
-              <th>ประเภท</th>
-              <th>สถาบัน</th>
-              <th>เลขท้าย</th>
-              <th>ใช้ทำอะไร</th>
-              <th></th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {accounts.map((a) => (
-              <AccountRow
-                key={a.id}
-                account={a}
-                onSaved={(saved) => setAccounts((prev) => prev.map((x) => (x.id === saved.id ? saved : x)))}
-              />
-            ))}
-            <tr className="new-row">
-              <td className="s-name">
-                <input
-                  placeholder="ชื่อบัญชีใหม่"
-                  value={draft.name}
-                  onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-                />
-              </td>
-              <td className="s-type">
-                <select value={draft.type} onChange={(e) => setDraft({ ...draft, type: e.target.value as AccountType })}>
-                  {Object.entries(TYPE_LABEL).map(([v, l]) => (
-                    <option key={v} value={v}>
-                      {l}
-                    </option>
-                  ))}
-                </select>
-              </td>
-              <td className="s-inst">
-                <input
-                  placeholder="สถาบัน"
-                  value={draft.institution ?? ""}
-                  onChange={(e) => setDraft({ ...draft, institution: e.target.value || null })}
-                />
-              </td>
-              <td className="s-ref">
-                <input
-                  placeholder="เลขท้าย"
-                  value={draft.masked_ref ?? ""}
-                  onChange={(e) => setDraft({ ...draft, masked_ref: e.target.value || null })}
-                />
-              </td>
-              <td className="s-purpose">
-                <input
-                  placeholder="ใช้ทำอะไร"
-                  value={draft.purpose ?? ""}
-                  onChange={(e) => setDraft({ ...draft, purpose: e.target.value || null })}
-                />
-              </td>
-              <td></td>
-              <td className="s-save">
-                <button className="primary" disabled={!draft.name.trim()} onClick={add}>
-                  เพิ่มบัญชี
-                </button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+      <div className="tabs settings-tabs" role="tablist">
+        {tabs.map((t) => (
+          <button
+            key={t}
+            role="tab"
+            aria-selected={tab === t}
+            className={tab === t ? "tab active" : "tab"}
+            onClick={() => show(t)}
+          >
+            {TAB_LABEL[t]}
+          </button>
+        ))}
       </div>
-      <GmailSection />
-      <EmailSourcesSection accounts={accounts} />
-      <KtcPasswordSection />
-      <RulesSection />
-      {me.via === "session" && <ApiTokensSection />}
-      {me.via === "session" && me.role === "admin" && <UsersSection meId={me.id} />}
+      {tab === "accounts" && (
+        <>
+          <h2>บัญชีของฉัน</h2>
+          <p className="muted small">
+            <b>เลขท้าย</b> ใช้จับคู่ว่าการโอนจาก KBank เข้าบัญชีไหนของคุณ (ไม่นับเป็นรายจ่าย) ใส่แค่เลขท้ายอย่างน้อย 4 ตัว
+            เช่น <code>7722</code> หรือ <code>x5204</code> ห้ามใส่เลขบัญชีเต็ม · บัญชีลบไม่ได้ ใช้ปิด "ใช้งาน" แทน
+          </p>
+          {error && <div className="message error">{error}</div>}
+          <div className="table-wrap">
+            <table className="settings">
+              <thead>
+                <tr>
+                  <th>ชื่อ</th>
+                  <th>ประเภท</th>
+                  <th>สถาบัน</th>
+                  <th>เลขท้าย</th>
+                  <th>ใช้ทำอะไร</th>
+                  <th></th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {accounts.map((a) => (
+                  <AccountRow
+                    key={a.id}
+                    account={a}
+                    onSaved={(saved) => setAccounts((prev) => prev.map((x) => (x.id === saved.id ? saved : x)))}
+                  />
+                ))}
+                <tr className="new-row">
+                  <td className="s-name">
+                    <input
+                      placeholder="ชื่อบัญชีใหม่"
+                      value={draft.name}
+                      onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+                    />
+                  </td>
+                  <td className="s-type">
+                    <select value={draft.type} onChange={(e) => setDraft({ ...draft, type: e.target.value as AccountType })}>
+                      {Object.entries(TYPE_LABEL).map(([v, l]) => (
+                        <option key={v} value={v}>
+                          {l}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="s-inst">
+                    <input
+                      placeholder="สถาบัน"
+                      value={draft.institution ?? ""}
+                      onChange={(e) => setDraft({ ...draft, institution: e.target.value || null })}
+                    />
+                  </td>
+                  <td className="s-ref">
+                    <input
+                      placeholder="เลขท้าย"
+                      value={draft.masked_ref ?? ""}
+                      onChange={(e) => setDraft({ ...draft, masked_ref: e.target.value || null })}
+                    />
+                  </td>
+                  <td className="s-purpose">
+                    <input
+                      placeholder="ใช้ทำอะไร"
+                      value={draft.purpose ?? ""}
+                      onChange={(e) => setDraft({ ...draft, purpose: e.target.value || null })}
+                    />
+                  </td>
+                  <td></td>
+                  <td className="s-save">
+                    <button className="primary" disabled={!draft.name.trim()} onClick={add}>
+                      เพิ่มบัญชี
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+      {tab === "email" && (
+        <>
+          <GmailSection />
+          <EmailSourcesSection accounts={accounts} />
+          <KtcPasswordSection />
+        </>
+      )}
+      {tab === "rules" && <RulesSection />}
+      {tab === "access" && (
+        <>
+          <ApiTokensSection />
+          {me.role === "admin" && <UsersSection meId={me.id} />}
+        </>
+      )}
     </section>
   );
 }

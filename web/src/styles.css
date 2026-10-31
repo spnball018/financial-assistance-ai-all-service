@@ -117,6 +117,8 @@ table.settings tr.new-row td { background: var(--bg); }
 .error-text { color: var(--error); }
 .manual { max-width: 720px; }
 .settings-section { margin-top: 24px; }
+.settings-tabs { flex-wrap: wrap; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+.settings-tabs + .settings-section { margin-top: 0; }
 tr.receipt-row td { background: var(--bg); }
 .receipt-panel { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
 .receipt-thumb img { width: 140px; max-height: 240px; object-fit: contain; border: 1px solid var(--border); border-radius: 6px; background: #fff; }
