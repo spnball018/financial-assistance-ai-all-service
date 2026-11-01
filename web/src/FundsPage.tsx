@@ -75,7 +75,12 @@ function moneyLabel(t: FundTrade): string {
   }
 }
 
-function History({ items, onDelete }: { items: FundTrade[]; onDelete: (t: FundTrade) => void }) {
+function History({ items, accountOf, onDelete }: {
+  items: FundTrade[];
+  /** fund_id -> account name, when trades of several accounts are shown */
+  accountOf?: Map<number, string>;
+  onDelete: (t: FundTrade) => void;
+}) {
   return (
     <div className="table-wrap">
       <table className="movements">
@@ -102,6 +107,7 @@ function History({ items, onDelete }: { items: FundTrade[]; onDelete: (t: FundTr
               <td className="m-date nowrap">{fmtWhen(t.trade_date, false)}</td>
               <td className="m-desc">
                 {tradeLabel(t)}
+                {accountOf && <div className="muted small">{accountOf.get(t.fund_id)}</div>}
                 {t.note && <div className="muted small">{t.note}</div>}
               </td>
               <td className="num m-units muted">
@@ -125,7 +131,9 @@ function History({ items, onDelete }: { items: FundTrade[]; onDelete: (t: FundTr
   );
 }
 
-function Unlinked({ items, onRecord }: { items: UnlinkedTransfer[]; onRecord: (u: UnlinkedTransfer) => void }) {
+type AccountTransfer = UnlinkedTransfer & { accountId: number; accountName: string };
+
+function Unlinked({ items, several, onRecord }: { items: AccountTransfer[]; several: boolean; onRecord: (u: AccountTransfer) => void }) {
   if (items.length === 0) return null;
   return (
     <div className="transfers fund-unlinked">
@@ -138,6 +146,7 @@ function Unlinked({ items, onRecord }: { items: UnlinkedTransfer[]; onRecord: (u
               {fmtWhen(u.occurred_at, u.has_time)} · {u.amount > 0 ? `โอนเข้าจาก ${u.other_account}` : `โอนออกไป ${u.other_account}`}{" "}
               <b>{fmtMoney(Math.abs(u.amount))}</b>
               {u.status === "pending" && <span className="badge badge-warn">รอตรวจ</span>}
+              {several && <span className="muted"> · {u.accountName}</span>}
               {u.description && <span className="muted"> · {u.description}</span>}
             </span>
             <button className="link" onClick={() => onRecord(u)}>
@@ -150,26 +159,31 @@ function Unlinked({ items, onRecord }: { items: UnlinkedTransfer[]; onRecord: (u
   );
 }
 
+const ALL = "all";
+
 /** Fund accounts (accounts of type investment): funds held, buys paid by a transfer from the bank, sells, switches, NAV.
- * A fund account holds no cash: every trade says where its money came from or went. */
+ * A fund account holds no cash: every trade says where its money came from or went. Shows all fund accounts
+ * together, or one picked from the toolbar. */
 export function FundsPage({ accounts }: { accounts: Account[] }) {
   const [ports, setPorts] = useState<FundAccount[] | null>(null);
-  const [accountId, setAccountId] = useState<number | null>(null);
+  const [view, setView] = useState<number | typeof ALL>(ALL);
   const [history, setHistory] = useState<FundTrade[]>([]);
-  const [unlinked, setUnlinked] = useState<UnlinkedTransfer[]>([]);
+  const [unlinked, setUnlinked] = useState<AccountTransfer[]>([]);
   const [prefill, setPrefill] = useState<Prefill | null>(null);
   const [showHidden, setShowHidden] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [navNote, setNavNote] = useState<{ ok: boolean; text: string } | null>(null);
   const [fetching, setFetching] = useState(false);
 
-  const port = ports?.find((p) => p.account_id === accountId) ?? null;
+  const shown = (ports ?? []).filter((p) => view === ALL || p.account_id === view);
+  const several = shown.length > 1;
 
   const load = () => {
     setPrefill(null);
     api.fundPortfolio().then((p) => {
       setPorts(p);
-      setAccountId((cur) => cur ?? p.find((a) => a.is_active)?.account_id ?? p[0]?.account_id ?? null);
+      // the account picked may have been the only one shown before another was added
+      setView((cur) => (cur !== ALL && !p.some((a) => a.account_id === cur) ? ALL : cur));
     }, (e: Error) => setError(e.message));
   };
   /** Latest NAVs from Finnomena; quiet = on opening the page, only failures are shown. */
@@ -197,12 +211,22 @@ export function FundsPage({ accounts }: { accounts: Account[] }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useEffect(() => {
-    if (accountId === null) return;
-    api.fundHistory(accountId).then((h) => {
-      setHistory(h.items);
-      setUnlinked(h.unlinked);
-    }, (e: Error) => setError(e.message));
-  }, [accountId, ports]);
+    if (ports === null) return;
+    const accts = ports.filter((p) => view === ALL || p.account_id === view);
+    let live = true;
+    Promise.all(accts.map((p) => api.fundHistory(p.account_id))).then((hs) => {
+      if (!live) return;
+      setHistory(hs.flatMap((h) => h.items).sort((a, b) => b.trade_date.localeCompare(a.trade_date) || b.id - a.id));
+      setUnlinked(
+        hs
+          .flatMap((h, i) => h.unlinked.map((u) => ({ ...u, accountId: accts[i].account_id, accountName: accts[i].name })))
+          .sort((a, b) => b.occurred_at.localeCompare(a.occurred_at)),
+      );
+    }, (e: Error) => live && setError(e.message));
+    return () => {
+      live = false;
+    };
+  }, [view, ports]);
 
   const run = async (fn: () => Promise<unknown>) => {
     setError(null);
@@ -224,9 +248,8 @@ export function FundsPage({ accounts }: { accounts: Account[] }) {
             : "";
     if (confirm(`ลบ${tradeLabel(t)} ${fmtMoney(t.amount)}?${extra}`)) run(() => api.deleteFundTrade(t.id));
   };
-  const record = (u: UnlinkedTransfer) => {
-    if (accountId === null) return;
-    setPrefill({ side: u.amount > 0 ? "buy" : "sell", accountId, amount: String(Math.abs(u.amount)), date: bangkokDate(u.occurred_at), transactionId: u.transaction_id });
+  const record = (u: AccountTransfer) => {
+    setPrefill({ side: u.amount > 0 ? "buy" : "sell", accountId: u.accountId, amount: String(Math.abs(u.amount)), date: bangkokDate(u.occurred_at), transactionId: u.transaction_id });
     document.querySelector(".trade-form")?.scrollIntoView({ behavior: "smooth" });
   };
 
@@ -244,14 +267,18 @@ export function FundsPage({ accounts }: { accounts: Account[] }) {
       </section>
     );
 
-  const funds = (port?.funds ?? []).filter((f) => showHidden || f.is_active || f.units > 0);
+  const funds = shown.flatMap((p) => p.funds).filter((f) => showHidden || f.is_active || f.units > 0);
+  const accountOf = new Map(shown.flatMap((p) => p.funds.map((f) => [f.id, p.name] as const)));
+  const sum = (k: "market_value" | "net_deposits" | "cost" | "unrealized" | "realized") => shown.reduce((t, p) => t + p[k], 0);
+  const total = { market_value: sum("market_value"), net_deposits: sum("net_deposits"), cost: sum("cost"), unrealized: sum("unrealized"), realized: sum("realized") };
 
   return (
     <section>
       <div className="toolbar">
         <h2>กองทุน</h2>
         {ports.length > 1 && (
-          <select value={accountId ?? ""} onChange={(e) => setAccountId(Number(e.target.value))} aria-label="บัญชีกองทุน">
+          <select value={view} onChange={(e) => setView(e.target.value === ALL ? ALL : Number(e.target.value))} aria-label="บัญชีกองทุน">
+            <option value={ALL}>ทุกบัญชี ({ports.length})</option>
             {ports.map((p) => (
               <option key={p.account_id} value={p.account_id}>
                 {p.name}
@@ -276,40 +303,40 @@ export function FundsPage({ accounts }: { accounts: Account[] }) {
       {error && <div className="message error">{error}</div>}
       {navNote && <div className={navNote.ok ? "message ok" : "message warn"}>{navNote.text}</div>}
 
-      {port && (
+      {shown.length > 0 && (
         <>
           <div className="cards">
             <div className="total-card">
               <div className="muted small">มูลค่ารวม</div>
-              <div className="total">{fmtMoney(port.market_value)}</div>
-              <div className="muted small">เงินโอนเข้าสุทธิ {fmtMoney(port.net_deposits)}</div>
+              <div className="total">{fmtMoney(total.market_value)}</div>
+              <div className="muted small">เงินโอนเข้าสุทธิ {fmtMoney(total.net_deposits)}</div>
             </div>
             <div className="total-card">
               <div className="muted small">ต้นทุน</div>
-              <div className="total">{fmtMoney(port.cost)}</div>
+              <div className="total">{fmtMoney(total.cost)}</div>
             </div>
             <div className="total-card">
               <div className="muted small">กำไร/ขาดทุนยังไม่รับรู้</div>
               <div className="total">
-                <Gain amount={port.unrealized} base={port.cost || undefined} />
+                <Gain amount={total.unrealized} base={total.cost || undefined} />
               </div>
             </div>
             <div className="total-card">
               <div className="muted small">กำไร/ขาดทุนที่รับรู้แล้ว (จากการขาย)</div>
               <div className="total">
-                <Gain amount={port.realized} />
+                <Gain amount={total.realized} />
               </div>
             </div>
           </div>
 
-          <Unlinked items={unlinked} onRecord={record} />
+          <Unlinked items={unlinked} several={several} onRecord={record} />
 
           <h2>ซื้อ/ขายกองทุน</h2>
           <FundTradeForm
             key={prefill?.transactionId ?? ""}
             ports={ports}
             accounts={accounts}
-            accountId={port.account_id}
+            accountId={view === ALL ? null : view}
             prefill={prefill}
             onSaved={load}
           />
@@ -333,7 +360,7 @@ export function FundsPage({ accounts }: { accounts: Account[] }) {
                 {funds.length === 0 && (
                   <tr>
                     <td colSpan={7} className="empty">
-                      ยังไม่มีกองทุน เพิ่มรหัสกองทุนด้านล่าง
+                      ยังไม่มีกองทุน บันทึกการซื้อหรือยอดที่มีอยู่แล้วด้านบน
                     </td>
                   </tr>
                 )}
@@ -342,6 +369,7 @@ export function FundsPage({ accounts }: { accounts: Account[] }) {
                     <td className="f-name">
                       <b>{f.code}</b>
                       {f.name && <div className="muted small">{f.name}</div>}
+                      {several && <div className="muted small">บัญชี {accountOf.get(f.id)}</div>}
                       {f.realized !== 0 && (
                         <div className="small">
                           รับรู้แล้ว <Gain amount={f.realized} />
@@ -392,9 +420,8 @@ export function FundsPage({ accounts }: { accounts: Account[] }) {
             </table>
           </div>
 
-
           <h2>ประวัติการซื้อขาย</h2>
-          <History items={history} onDelete={deleteTrade} />
+          <History items={history} accountOf={several ? accountOf : undefined} onDelete={deleteTrade} />
         </>
       )}
     </section>

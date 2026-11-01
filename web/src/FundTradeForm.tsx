@@ -207,6 +207,9 @@ export function FundTradeForm({ ports, accounts, accountId, prefill, onSaved }: 
       }
       const fundCode = byCode ? code.trim() : (fund?.code ?? "");
       setDone(`บันทึก${SIDE_LABEL[side]} ${fundCode} ${fmtUnits(Number(units))} หน่วย ${fmtMoney(Number(amount))} แล้ว`);
+      setCode("");
+      setFundId("");
+      setToFundId("");
       setAmount("");
       setUnits("");
       setUnitsIn("");
