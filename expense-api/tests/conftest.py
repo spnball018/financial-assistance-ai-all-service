@@ -7,6 +7,8 @@ import pytest
 from sqlalchemy import create_engine, text
 
 ROOT = Path(__file__).resolve().parent.parent
+# never fetch NAVs from Finnomena in the background (funds/scheduler.py)
+os.environ["FUND_NAV_SYNC_TIMES"] = "off"
 
 
 @pytest.fixture(autouse=True)

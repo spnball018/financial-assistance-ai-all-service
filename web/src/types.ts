@@ -425,6 +425,27 @@ export interface NavRefresh {
   failed: { fund_id: number; code: string; error: string }[];
 }
 
+export interface NavSync {
+  codes: number;
+  navs_saved: number;
+  funds_updated: number;
+  failed: { code: string; error: string }[];
+}
+
+export interface FundValuePoint {
+  date: string;
+  value: number;
+  cost: number;
+  by_fund: Record<string, number>;
+}
+
+export interface FundValueHistory {
+  account_id: number;
+  name: string;
+  funds: string[];
+  points: FundValuePoint[];
+}
+
 export interface TradeNav {
   code: string;
   date: string;

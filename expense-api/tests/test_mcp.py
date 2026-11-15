@@ -4,6 +4,8 @@ import base64
 import hashlib
 import json
 import re
+from datetime import date
+from decimal import Decimal
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
@@ -14,6 +16,7 @@ from sqlalchemy import text
 from app import auth
 from app.auth import require_user
 from app.main import app
+from funds import service as funds
 
 BASE = "http://localhost:3000"             # PUBLIC_BASE_URL when app.mcp_server was imported (the default)
 RESOURCE = BASE + "/mcp"
@@ -111,6 +114,18 @@ def test_metadata_points_at_this_server(c):
 def test_only_claude_or_localhost_may_register(c):
     assert register(c).status_code == 201
     assert register(c, "http://localhost:6274/oauth/callback").status_code == 201
+    # a client that follows the metadata (client_secret_post) gets a secret and can use it at /token
+    res = c.post("/register", json={"redirect_uris": [CALLBACK], "token_endpoint_auth_method": "client_secret_post",
+                                    "client_name": "Claude"})
+    assert res.status_code == 201 and res.json()["client_secret"]
+    secret_client = res.json()
+    sign_in(c)
+    code = parse_qs(urlsplit(approve(c, secret_client["client_id"]).headers["location"]).query)["code"][0]
+    c.cookies.clear()
+    form = {"grant_type": "authorization_code", "code": code, "redirect_uri": CALLBACK, "code_verifier": VERIFIER,
+            "resource": RESOURCE}
+    assert token(c, secret_client["client_id"], **form).status_code == 401          # no secret
+    assert token(c, secret_client["client_id"], client_secret=secret_client["client_secret"], **form).status_code == 200
     for bad in ("https://evil.example/cb", "http://claude.ai/api/mcp/auth_callback", "https://claude.ai.evil.example/cb"):
         assert register(c, bad).status_code == 400, bad
 
@@ -215,3 +230,83 @@ def test_each_person_reads_only_their_own_rows(c):
         conn.execute(text("UPDATE ledger.users SET is_active = false WHERE id = :k"), {"k": kid})
     assert call(c, other["access_token"], "tools/list").status_code == 401
     json.dumps(owner)   # tokens are plain JSON
+
+
+@pytest.fixture
+def fund_account(db):
+    """An investment account of user 1; dropped afterwards (other tests expect only the seeded accounts)."""
+    def drop():
+        with db.begin() as conn:
+            conn.execute(text("TRUNCATE ledger.fund_trades, ledger.funds RESTART IDENTITY CASCADE"))
+            conn.execute(text("DELETE FROM ledger.transactions"))
+            conn.execute(text("DELETE FROM ledger.accounts WHERE name = 'TEST fund MCP'"))
+    drop()
+    with db.begin() as conn:
+        acct = conn.execute(text("INSERT INTO ledger.accounts (user_id, name, type) "
+                                 "VALUES (1, 'TEST fund MCP', 'investment') RETURNING id")).scalar()
+    yield acct
+    drop()
+
+
+def test_fund_trades(c, db, fund_account):
+    kid = auth.add_user("kid@example.com", "member")["id"]
+    acct = fund_account
+    with db.begin() as conn:
+        usx = funds.create_fund(conn, 1, account_id=acct, code="K-USXNDQ-A(A)")["id"]
+        set50 = funds.create_fund(conn, 1, account_id=acct, code="SCBSET50")["id"]
+        funds.add_trade(conn, 1, fund_id=usx, side="buy", trade_date=date(2026, 9, 1), units=Decimal("850.1234"),
+                        amount=Decimal("10000"), nav=Decimal("11.763"), counter_account_id=1)
+        funds.add_trade(conn, 1, fund_id=set50, side="buy", trade_date=date(2026, 8, 15), units=Decimal("1000"),
+                        amount=Decimal("8000"), counter_account_id=1, note="DCA")
+        funds.add_trade(conn, 1, fund_id=set50, side="sell", trade_date=date(2026, 10, 20), units=Decimal("300"),
+                        amount=Decimal("2550"), counter_account_id=1)
+    _, owner = connect(c, 1)
+    _, other = connect(c, kid)
+
+    h = tool(c, owner["access_token"], "fund_trades", account_id=acct)
+    assert h["total"] == 3 and h["unlinked"] == []
+    assert [(t["trade_date"], t["fund_code"], t["side"]) for t in h["trades"]] == [
+        ("2026-10-20", "SCBSET50", "sell"), ("2026-09-01", "K-USXNDQ-A(A)", "buy"), ("2026-08-15", "SCBSET50", "buy")]
+    first = h["trades"][1]
+    assert first["units"] == 850.1234 and first["amount"] == 10000.0 and first["nav"] == 11.763
+    assert first["other_account"] == "KBank ใช้จ่าย" and first["funding"] == "new_transfer"
+    assert h["trades"][2]["note"] == "DCA" and h["trades"][2]["nav"] == 8.0      # no NAV given: amount / units
+    one = tool(c, owner["access_token"], "fund_trades", account_id=acct, fund_code="scbset50", limit=1)
+    assert one["total"] == 2 and [t["side"] for t in one["trades"]] == ["sell"]
+
+    # a bank account, and someone else's fund account: errors that reveal nothing
+    for token_, aid in ((owner, 1), (other, acct)):
+        res = call(c, token_["access_token"], "tools/call",
+                   {"name": "fund_trades", "arguments": {"account_id": aid}}).json()["result"]
+        assert res["isError"] and "SCBSET50" not in json.dumps(res), aid
+
+
+def test_fund_nav_and_value_history_tools(c, db):
+    with db.begin() as conn:
+        conn.execute(text("TRUNCATE ledger.fund_navs"))
+        conn.execute(text("INSERT INTO ledger.fund_navs (code, nav_date, nav) "
+                          "SELECT 'K-USA-A(A)', d::date, 10 + extract(doy FROM d) / 100 "
+                          "FROM generate_series(date '2025-01-01', date '2026-10-31', interval '1 day') d"))
+        acc = conn.execute(text("INSERT INTO ledger.accounts (user_id, name, type) VALUES (1, 'TEST fund MCP', "
+                                "'investment') RETURNING id")).scalar()
+        fund = conn.execute(text("INSERT INTO ledger.funds (user_id, account_id, code) VALUES (1, :a, 'K-USA-A(A)') "
+                                 "RETURNING id"), {"a": acc}).scalar()
+        conn.execute(text("INSERT INTO ledger.fund_trades (user_id, fund_id, side, trade_date, units, amount, nav, "
+                          "funding) VALUES (1, :f, 'buy', '2026-10-01', 100, 1000, 10, 'held_before')"), {"f": fund})
+    kid = auth.add_user("kid2@example.com", "member")["id"]
+    _, owner = connect(c, 1)
+    _, other = connect(c, kid)
+    try:
+        h = tool(c, owner["access_token"], "fund_nav_history", fund_code="k-usa-a(a)")
+        assert h["interval"] == "week" and len(h["points"]) <= 400 and h["stats"]["from"] == "2025-01-01"
+        assert tool(c, owner["access_token"], "fund_nav_history", fund_code="K-USA-A(A)", since="2026-10-25",
+                    interval="day")["points"][0]["date"] == "2026-10-25"
+        v = tool(c, owner["access_token"], "portfolio_value_history", account_id=acc)
+        assert v["interval"] == "day" and v["points"][0]["value"] == 100 * (10 + 274 / 100)    # 2026-10-01 = day 274
+        res = call(c, other["access_token"], "tools/call",
+                   {"name": "portfolio_value_history", "arguments": {"account_id": acc}}).json()["result"]
+        assert res["isError"] and "TEST fund" not in json.dumps(res, ensure_ascii=False)
+    finally:
+        with db.begin() as conn:
+            conn.execute(text("TRUNCATE ledger.fund_trades, ledger.funds, ledger.fund_navs CASCADE"))
+            conn.execute(text("DELETE FROM ledger.accounts WHERE name = 'TEST fund MCP'"))

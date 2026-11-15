@@ -5,7 +5,8 @@ code expiry and redirect_uri; this module decides who may register, sends /autho
 (the person signs in with Google like on the web UI), and keeps codes and tokens in Postgres.
 
 - Clients register themselves (RFC 7591), but only with redirect URIs on claude.ai / claude.com, or on
-  localhost (Claude Code, the MCP Inspector).
+  localhost (Claude Code, the MCP Inspector). Public clients and ones with an SDK-issued secret both work;
+  PKCE is always required.
 - Tokens are prefixed mcp_ and only sha256 is stored. require_user (app/auth.py) never accepts them, so a
   connector can read through the MCP tools and cannot call the REST API, which can write.
 - AccessToken.subject is the user id as a string; the MCP tools filter every query by it.
@@ -154,8 +155,8 @@ class Provider:
         if not client_info.redirect_uris or bad:
             raise RegistrationError("invalid_redirect_uri",
                                     "only Claude's callback (claude.ai / claude.com) or localhost is allowed")
-        if client_info.token_endpoint_auth_method not in (None, "none"):
-            raise RegistrationError("invalid_client_metadata", "only public clients (PKCE, no secret)")
+        # any auth method the SDK supports: public (none) or with the secret it issues (client_secret_post/basic,
+        # what its metadata advertises). PKCE and the redirect URI check above apply to every client.
 
         def run():
             with get_engine().begin() as conn:

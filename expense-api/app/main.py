@@ -1,3 +1,4 @@
+import asyncio
 import os
 import re
 from contextlib import asynccontextmanager
@@ -13,14 +14,19 @@ from sqlalchemy.exc import IntegrityError
 from app import mcp_server
 from app.auth import current_user_id, require_user
 from app.db import get_engine
+from funds import scheduler as fund_scheduler
 from app.routers import (accounts, auth, categorize, funds, gmail, ktc, oauth, receipts, reconcile, rules, sync,
                          transactions, users, wallets)
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    async with mcp_server.server.session_manager.run():   # the /mcp transport needs its task group
-        yield
+    nav_sync = asyncio.create_task(fund_scheduler.run())   # fund NAVs every day (FUND_NAV_SYNC_TIMES)
+    try:
+        async with mcp_server.server.session_manager.run():   # the /mcp transport needs its task group
+            yield
+    finally:
+        nav_sync.cancel()
 
 
 # Swagger is mounted below behind require_user, like everything else

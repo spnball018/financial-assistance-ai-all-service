@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "./api";
 import { fmtMoney, fmtUnits, fmtWhen } from "./format";
 import { bangkokDate, finnomenaUrl, FundTradeForm, navOff, todayInBangkok, type Prefill } from "./FundTradeForm";
+import { FundValueChart } from "./FundValueChart";
 import type { Account, FundAccount, FundPosition, FundTrade, UnlinkedTransfer } from "./types";
 
 const gainClass = (n: number | null) => (n === null || Math.abs(n) < 0.005 ? "" : n < 0 ? "neg" : "ok-text");
@@ -174,6 +175,7 @@ export function FundsPage({ accounts }: { accounts: Account[] }) {
   const [error, setError] = useState<string | null>(null);
   const [navNote, setNavNote] = useState<{ ok: boolean; text: string } | null>(null);
   const [fetching, setFetching] = useState(false);
+  const [chartVersion, setChartVersion] = useState(0);
 
   const shown = (ports ?? []).filter((p) => view === ALL || p.account_id === view);
   const several = shown.length > 1;
@@ -185,6 +187,24 @@ export function FundsPage({ accounts }: { accounts: Account[] }) {
       // the account picked may have been the only one shown before another was added
       setView((cur) => (cur !== ALL && !p.some((a) => a.account_id === cur) ? ALL : cur));
     }, (e: Error) => setError(e.message));
+  };
+  /** NAV history from Finnomena now (it also runs every day by itself): backfills, then moves the latest NAVs. */
+  const syncNavs = async () => {
+    setFetching(true);
+    try {
+      const r = await api.syncFundNavs();
+      setNavNote(
+        r.failed.length > 0
+          ? { ok: false, text: `ดึง NAV ไม่ได้: ${r.failed.map((f) => `${f.code} (${f.error})`).join(", ")}` }
+          : { ok: true, text: `ดึง NAV แล้ว ${r.codes} กองทุน (บันทึกใหม่ ${r.navs_saved} วัน)` },
+      );
+      load();
+      setChartVersion((v) => v + 1);
+    } catch (e) {
+      if (!navOff(e)) setNavNote({ ok: false, text: `ดึง NAV ไม่ได้: ${(e as Error).message}` });
+    } finally {
+      setFetching(false);
+    }
   };
   /** Latest NAVs from Finnomena; quiet = on opening the page, only failures are shown. */
   const refreshNavs = async (quiet: boolean) => {
@@ -289,7 +309,7 @@ export function FundsPage({ accounts }: { accounts: Account[] }) {
         )}
         {ports.length === 1 && <span className="muted">{ports[0].name}</span>}
         <div className="spacer" />
-        <button onClick={() => refreshNavs(false)} disabled={fetching}>
+        <button onClick={syncNavs} disabled={fetching} title="ดึง NAV ย้อนหลังและล่าสุด (ระบบดึงให้อัตโนมัติทุกวัน 08:00 และ 20:00)">
           {fetching ? "กำลังดึง NAV…" : "ดึง NAV ล่าสุด"}
         </button>
         <label className="small muted">
@@ -328,6 +348,9 @@ export function FundsPage({ accounts }: { accounts: Account[] }) {
               </div>
             </div>
           </div>
+
+          <h2>มูลค่าตามเวลา</h2>
+          <FundValueChart key={chartVersion} accountIds={shown.map((p) => p.account_id)} />
 
           <Unlinked items={unlinked} several={several} onRecord={record} />
 

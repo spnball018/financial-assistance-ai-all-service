@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 from app.auth import current_user_id
 from app.db import get_engine
+from funds import history as nav_history
 from funds import service
 from funds.nav import NavError, NavSource, source_from_env
 from ledger.transactions import Invalid, NotFound
@@ -80,6 +81,32 @@ def refresh_nav(account_id: Optional[int] = None, uid: int = Depends(current_use
     src = _source(source)
     with get_engine().begin() as conn:
         return _run(lambda: service.refresh_navs(conn, uid, src, account_id=account_id))
+
+
+@router.post("/funds/navs/sync")
+def sync_navs(uid: int = Depends(current_user_id), source: Optional[NavSource] = Depends(get_nav_source)):
+    """Fetch NAV history of your funds now (it also runs every day by itself): the whole history the first
+    time, then the new days. Also moves each fund's latest NAV forward."""
+    src = _source(source)
+    with get_engine().connect() as conn:
+        codes = nav_history.tracked_codes(conn, uid)
+    return nav_history.sync(get_engine(), src, codes)
+
+
+@router.get("/funds/navs/status")
+def nav_status(uid: int = Depends(current_user_id)):
+    """For each of your fund codes: stored NAV days (first, last, count) and when they were last fetched."""
+    with get_engine().connect() as conn:
+        return nav_history.status(conn, uid)
+
+
+@router.get("/funds/navs")
+def nav_series(code: str = Query(min_length=1, max_length=50), since: Optional[date] = None,
+               interval: str = "day", uid: int = Depends(current_user_id)):
+    """Stored NAVs of one fund code, oldest first, with change, high, low and max drawdown over the period.
+    interval week or month keeps the last NAV of each."""
+    with get_engine().connect() as conn:
+        return _run(lambda: nav_history.series(conn, code, since, nav_history.check_interval(interval)))
 
 
 @router.get("/funds/nav")
@@ -170,6 +197,16 @@ def delete_trade(trade_id: int, uid: int = Depends(current_user_id)):
     with get_engine().begin() as conn:
         _run(lambda: service.delete_trade(conn, uid, trade_id))
     return Response(status_code=204)
+
+
+@router.get("/funds/accounts/{account_id}/value-history")
+def value_history(account_id: int, since: Optional[date] = None, interval: str = "day",
+                  uid: int = Depends(current_user_id)):
+    """What the account's funds were worth each day (units held x that day's NAV) next to their cost, from the
+    first trade; `by_fund` splits the value per fund code."""
+    with get_engine().connect() as conn:
+        return _run(lambda: nav_history.value_history(conn, uid, account_id, since,
+                                                      nav_history.check_interval(interval)))
 
 
 @router.get("/funds/accounts/{account_id}/history")

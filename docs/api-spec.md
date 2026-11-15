@@ -62,7 +62,7 @@ expense-api เป็น MCP server แบบ Streamable HTTP (stateless, ตอ
 - **เข้าสู่ระบบ:** OAuth 2.1 ตาม MCP spec (MCP Python SDK เป็นคนเสิร์ฟ endpoint และตรวจ PKCE S256, อายุ code, redirect_uri) issuer = `PUBLIC_BASE_URL` · Claude ลงทะเบียนตัวเองผ่าน `POST /register` ได้เฉพาะ redirect URI บน `https://claude.ai` / `https://claude.com` หรือ `http://localhost` (เช่น MCP Inspector) ไม่เกิน 200 client · `/authorize` ส่งต่อไปหน้า `GET /api/oauth/consent` ที่ต้องเข้าสู่ระบบด้วย Google ก่อน (ยังไม่เข้าระบบ → `/api/auth/login?next=…` แล้วกลับมา) กด "อนุญาต" (`POST /api/oauth/consent` มี CSRF token ในฟอร์ม) → code ใช้ได้ครั้งเดียว 5 นาที → `POST /token` ได้ access token `mcp_at_…` (1 ชั่วโมง) + refresh token `mcp_rt_…` (60 วัน, หมุนทุกครั้งที่ refresh) scope `read`
 - **แยกจาก API token:** token ของ MCP เปิดได้แค่ `/mcp` เรียก REST API ไม่ได้ (401) และ API token (`fat_…`) เปิด `/mcp` ไม่ได้ · ปิดการใช้งานผู้ใช้แล้ว token ใช้ไม่ได้ทันที
 - **ข้อมูลของใครของมัน:** ทุก tool อ่าน user id จาก access token เท่านั้น ไม่รับ user id จากผู้เรียก
-- **tool (ทั้งหมด `readOnlyHint`, ไม่มี tool ที่แก้ข้อมูล):** `monthly_summary(month)`, `category_expenses(month, category_id)`, `income(month)`, `search_transactions(month?, status?, account_id?, text_contains?, limit≤100)` (ค้นชื่อผู้รับ/รายละเอียด/โน้ต รวมรายการย่อย), `pending_review(limit)`, `transaction_details(transaction_id)` (ไม่รวมเนื้ออีเมล), `accounts()`, `categories()`, `account_balances()`, `account_ledger(account_id, limit≤200)`, `fund_portfolio()` เวลาเป็นเวลาไทย ยอดเป็นบาท
+- **tool (ทั้งหมด `readOnlyHint`, ไม่มี tool ที่แก้ข้อมูล):** `monthly_summary(month)`, `category_expenses(month, category_id)`, `income(month)`, `search_transactions(month?, status?, account_id?, text_contains?, limit≤100)` (ค้นชื่อผู้รับ/รายละเอียด/โน้ต รวมรายการย่อย), `pending_review(limit)`, `transaction_details(transaction_id)` (ไม่รวมเนื้ออีเมล), `accounts()`, `categories()`, `account_balances()`, `account_ledger(account_id, limit≤200)`, `fund_portfolio()`, `fund_trades(account_id, fund_code?, limit≤500)` (ประวัติซื้อขายกองทุน), `fund_nav_history(fund_code, since?, interval)`, `portfolio_value_history(account_id, since?, interval)` เวลาเป็นเวลาไทย ยอดเป็นบาท
 - ถ้า Cloudflare (Bot Fight Mode / WAF) บล็อก server ของ Anthropic ให้ตั้ง WAF rule skip path ข้างบน
 
 #### ✅ `GET /users` · `POST /users` · `PATCH /users/{id}` (เฉพาะ admin)
@@ -388,7 +388,7 @@ Body `{"entries": [...]}` (รายการที่ผู้ใช้แก�
 ```
 `status` ของ top-up: `linked | already | not_found | ambiguous | confirmed` (`confirmed` = รายการธนาคารที่ผู้ใช้ตัดสินใจแล้ว ไม่แตะ)
 
-### บัญชีกองทุน (migration 0022, 0023)
+### บัญชีกองทุน (migration 0022, 0023, 0025)
 
 บัญชีกองทุนคือบัญชี `type = investment` (เช่น หนึ่งบัญชีต่อ บลจ.) บันทึกเองทั้งหมด (`funds/service.py`) **บัญชีกองทุนไม่มีเงินค้าง** เงินที่โอนเข้าคือเงินซื้อ และเงินที่ขายได้ต้องออกไปบัญชีอื่น การโอนเข้าและออกยังเป็น transfer ใน `transactions` ตามปกติ (ไม่นับเป็นรายจ่าย) รายการซื้อขายแต่ละรายการระบุที่มาหรือปลายทางของเงิน (`funding`):
 - `new_transfer`: สร้าง transfer พร้อมรายการ และลบไปพร้อมกัน
@@ -431,6 +431,26 @@ NAV ของกองทุนในวันนั้นจาก Finnomena �
 ```json
 {"code": "B-CHINAARMF", "date": "2026-10-02", "nav": 8.8058}
 ```
+
+#### ✅ ประวัติ NAV รายวัน (migration 0025)
+expense-api ดึง NAV ของทุกรหัสกองทุนที่มีผู้ใช้ถืออยู่ จาก Finnomena **ทุกวันเอง** (`funds/scheduler.py` เวลา `FUND_NAV_SYNC_TIMES` เวลาไทย ค่าเริ่มต้น `08:00,20:00` และครั้งหนึ่งหลังเปิดเซิร์ฟเวอร์ 1 นาที, `off` = ปิด) เก็บใน `ledger.fund_navs` (ใช้ร่วมทุกผู้ใช้ เหมือน `categories`) ครั้งแรกดึงย้อนหลังเท่าที่ Finnomena มี ครั้งต่อไปดึงตั้งแต่ 7 วันก่อนวันล่าสุดที่เก็บไว้ (NAV ที่ถูกแก้ภายหลังก็อัปเดต) แล้วเลื่อน `funds.nav` ไปค่าล่าสุด ยกเว้น NAV ที่ผู้ใช้ใส่เองของวันที่ใหม่กว่าหรือวันเดียวกัน กองไหนดึงไม่ได้ไม่ทำให้กองอื่นหยุด มี advisory lock กันสองโปรเซสดึงพร้อมกัน
+
+- `POST /funds/navs/sync` ดึงเดี๋ยวนี้ (เฉพาะรหัสกองทุนของผู้ใช้) → `{"codes": 2, "navs_saved": 1350, "funds_updated": 2, "failed": [{"code": "X", "error": "ไม่พบกองทุนนี้ใน Finnomena"}]}` · `FUND_NAV_URL=off` → `503`
+- `GET /funds/navs/status` → ต่อรหัสกองทุนของผู้ใช้: `[{"code", "first_date", "last_date", "days", "fetched_at"}]`
+- `GET /funds/navs?code=K-USXNDQ-A(A)&since=2026-01-01&interval=day|week|month` NAV ที่เก็บไว้ของรหัสนั้น (ไม่สนตัวพิมพ์เล็กใหญ่) เรียงเก่าไปใหม่ `week`/`month` = ค่าสุดท้ายของแต่ละสัปดาห์/เดือน · interval อื่นได้ `422`
+  ```json
+  {"code": "K-USXNDQ-A(A)", "points": [{"date": "2026-01-02", "nav": 15.2104}],
+   "stats": {"from": "2026-01-02", "to": "2026-11-13", "first": 15.2104, "last": 16.6036, "change": 1.3932,
+             "change_pct": 9.16, "high": 17.1, "low": 13.9, "max_drawdown_pct": -18.71, "max_drawdown_at": "2026-04-08"}}
+  ```
+  `max_drawdown_pct`: ลดลงมากที่สุดจากจุดสูงสุดก่อนหน้าในช่วงนั้น
+- `GET /funds/accounts/{account_id}/value-history?since=&interval=` มูลค่าของบัญชีกองทุนแต่ละวัน = หน่วยที่ถือวันนั้น × NAV วันนั้น (วันหยุดใช้ NAV วันทำการก่อนหน้า, ก่อนมีประวัติใช้ NAV ของรายการซื้อขาย) คู่กับต้นทุน (เฉลี่ย เหมือน portfolio) ตั้งแต่รายการแรก `by_fund` แยกมูลค่าตามรหัส · บัญชีของคนอื่นหรือไม่ใช่ investment ได้ `422`
+  ```json
+  {"account_id": 13, "name": "KAsset", "funds": ["K-USXNDQ-A(A)"],
+   "points": [{"date": "2026-10-29", "value": 740.74, "cost": 600.0, "by_fund": {"K-USXNDQ-A(A)": 740.74}}],
+   "stats": {"change_pct": 12.4, "max_drawdown_pct": -8.2, "...": "..."}}
+  ```
+  หน้าเว็บกองทุนวาดเป็นกราฟ "มูลค่าตามเวลา" (3 เดือน / 1 ปี / ทั้งหมด)
 
 #### ✅ `POST /funds/trades` → 201
 ระบุกองทุนด้วย `fund_id` หรือ `account_id` + `fund_code` (ส่งอย่างใดอย่างหนึ่ง ไม่งั้นได้ `422`) ถ้ารหัสนั้นยังไม่มีในบัญชี ระบบเพิ่มกองทุนให้ (ค้นชื่อและ NAV จาก Finnomena ก่อน) แล้วบันทึกรายการใน transaction เดียวกัน ถ้ารายการบันทึกไม่ได้ กองทุนใหม่ก็ไม่ถูกเพิ่ม

@@ -183,6 +183,13 @@ erDiagram
         timestamptz created_at
     }
 
+    fund_navs {
+        text code PK "รหัสกองทุน ตัวใหญ่ (ใช้ร่วมทุกผู้ใช้)"
+        date nav_date PK
+        numeric nav
+        timestamptz fetched_at "ดึงจาก Finnomena ทุกวัน"
+    }
+
     fund_trades {
         int user_id FK "เจ้าของข้อมูล"
         bigint id PK
@@ -309,6 +316,7 @@ erDiagram
     wallet_screenshots ||..o{ transactions : "raw.screenshot_id (ตรรกะ ไม่มี FK)"
     accounts ||--o{ funds : "account_id"
     funds ||--o{ fund_trades : "fund_id"
+    funds ||..o{ fund_navs : "upper(code) (ตรรกะ ไม่มี FK)"
     transactions |o--o| fund_trades : "transaction_id"
     fund_trades |o--o| fund_trades : "switched_from"
     users ||--o{ accounts : "user_id (และทุกตารางข้อมูล)"
@@ -331,7 +339,7 @@ erDiagram
 | รอจับคู่ | `ecommerce_orders`, `ecommerce_order_items` | order ของ Shopee/Lazada จากอีเมล `matched_txn_id` ชี้รายการจ่ายที่แยกเป็น order แล้ว |
 | ใบเสร็จ | `receipts` | รูปใบเสร็จและผลที่อ่านได้ ลูกที่แยกออกมาชี้กลับด้วย `transactions.receipt_id` |
 | รูปหน้าจอ wallet | `wallet_screenshots` | รูปประวัติรายการจากแอป e-wallet และผลที่อ่านได้ รายการที่บันทึกมี `source = wallet_screenshot` และ `raw.screenshot_id` |
-| กองทุน | `funds`, `fund_trades` | กองทุนในบัญชี investment และรายการซื้อ/ขาย/สับเปลี่ยน (หน่วย, ยอดเงิน, NAV) ที่บันทึกเอง บัญชีกองทุนไม่มีเงินค้าง เงินเข้า/ออกเป็น transfer ใน `transactions` และแต่ละรายการซื้อขายชี้ไปที่ transfer ของตัวเองด้วย `transaction_id` (ยกเว้น `held_before` และ `switch`) |
+| กองทุน | `funds`, `fund_trades`, `fund_navs` | กองทุนในบัญชี investment และรายการซื้อ/ขาย/สับเปลี่ยน (หน่วย, ยอดเงิน, NAV) ที่บันทึกเอง บัญชีกองทุนไม่มีเงินค้าง เงินเข้า/ออกเป็น transfer ใน `transactions` และแต่ละรายการซื้อขายชี้ไปที่ transfer ของตัวเองด้วย `transaction_id` (ยกเว้น `held_before` และ `switch`) · `fund_navs` = NAV รายวันของทุกรหัสที่มีคนถือ ดึงจาก Finnomena ทุกวัน (0025) ใช้วาดกราฟมูลค่าตามเวลา |
 | ความลับ | `settings` | ค่าที่เข้ารหัส เช่น รหัส PDF ของ KTC |
 | ผู้ใช้ | `users`, `auth_sessions`, `api_tokens`, `gmail_connections` | ผู้ใช้ (admin/member), session จาก Google sign-in และ API token เก็บแค่ sha256 ของความลับ, Gmail ของแต่ละคน (refresh token เข้ารหัส) |
 | Claude connector (MCP) | `oauth_clients`, `oauth_codes`, `oauth_tokens` | OAuth ของ MCP connector: client ที่ลงทะเบียน, code ครั้งเดียว และ token อ่านอย่างเดียว (เก็บแค่ sha256) ใช้ได้แค่ `/mcp` |

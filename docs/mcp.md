@@ -14,7 +14,7 @@ expense-api เปิด MCP server ให้ Claude (claude.ai บนเว็�
 
 | ประเภท | จำนวน |
 |---|---|
-| Tools | 11 (ทั้งหมด `readOnlyHint: true`) |
+| Tools | 14 (ทั้งหมด `readOnlyHint: true`) |
 | Prompts | ไม่มี |
 | Resources | ไม่มี |
 | Server instructions | มี (ดูด้านล่าง) |
@@ -121,6 +121,50 @@ expense-api เปิด MCP server ให้ Claude (claude.ai บนเว็�
 #### `fund_portfolio()`
 บัญชีการลงทุน: เงินสด กองทุนพร้อมจำนวนหน่วย ต้นทุนเฉลี่ย มูลค่าตลาด กำไร/ขาดทุน และยอดรวม
 ผลลัพธ์: `accounts[]` (รายละเอียดตาม `GET /funds/portfolio` ใน [api-spec.md](api-spec.md))
+
+#### `fund_trades(account_id, fund_code?, limit=100)`
+รายการซื้อขายกองทุนของบัญชีการลงทุนหนึ่ง ใหม่สุดก่อน พร้อมที่มาของเงิน (ซื้อ) หรือปลายทาง (ขาย) และกองทุนอีกฝั่งของการสับเปลี่ยน
+
+| พารามิเตอร์ | ชนิด | |
+|---|---|---|
+| `account_id` | int | บัญชีประเภท investment จาก `accounts` หรือ `fund_portfolio` |
+| `fund_code` | string | เฉพาะกองนี้ (ไม่สนตัวพิมพ์เล็กใหญ่) ไม่บังคับ |
+| `limit` | int | 1–500 |
+
+ผลลัพธ์: `account_id`, `name`, `total` (จำนวนรายการที่ตรงเงื่อนไข), `trades[]`: `id`, `trade_date`, `fund_code`, `side` (`buy` \| `sell`), `units`, `amount`, `nav`, `funding` (`new_transfer` \| `linked_transfer` \| `held_before` \| `switch`), `other_account`, `switch_fund_code`, `transfer_status`, `note` (ช่องที่ว่างจะไม่ส่งมา), `unlinked[]` (เงินโอนเข้า/ออกบัญชีที่ยังไม่ผูกกับรายการซื้อขาย; `amount` บวก = เข้า, ลบ = ออก) บัญชีที่ไม่ใช่ investment หรือไม่ใช่ของผู้ใช้ตอบเป็น error
+
+```json
+{"account_id": 15, "name": "KAsset", "total": 2,
+ "trades": [{"id": 3, "trade_date": "2026-10-20", "fund_code": "SCBSET50", "side": "sell", "units": 300.0,
+             "amount": 2550.0, "nav": 8.5, "funding": "new_transfer", "other_account": "KBank ใช้จ่าย",
+             "transfer_status": "confirmed"},
+            {"id": 1, "trade_date": "2026-08-15", "fund_code": "SCBSET50", "side": "buy", "units": 1000.0,
+             "amount": 8000.0, "nav": 8.0, "funding": "new_transfer", "other_account": "KBank ใช้จ่าย",
+             "transfer_status": "confirmed", "note": "DCA"}],
+ "unlinked": []}
+```
+
+#### `fund_nav_history(fund_code, since?, interval="auto")`
+NAV รายวันของกองทุนหนึ่งที่เก็บไว้ (ดึงจาก Finnomena ทุกวัน ย้อนหลังเท่าที่ Finnomena มี) เรียงเก่าไปใหม่ พร้อมสถิติของช่วงนั้น ใช้ดูผลตอบแทน ความผันผวน และเทียบกองทุน
+
+| พารามิเตอร์ | ชนิด | |
+|---|---|---|
+| `fund_code` | string | เช่น `K-USXNDQ-A(A)` (ไม่สนตัวพิมพ์เล็กใหญ่) จาก `fund_portfolio` |
+| `since` | string | `YYYY-MM-DD` ไม่บังคับ |
+| `interval` | `auto` \| `day` \| `week` \| `month` | `auto` = รายวันถ้าไม่เกิน 400 จุด ไม่งั้นรายสัปดาห์ ไม่งั้นรายเดือน |
+
+ผลลัพธ์: `code`, `interval` (ที่ใช้จริง), `points[]` (`date`, `nav`), `stats` (`from`, `to`, `first`, `last`, `change`, `change_pct`, `high`, `low`, `max_drawdown_pct`, `max_drawdown_at`) สถิติคิดจากข้อมูลรายวันเต็ม ไม่ใช่จุดที่ย่อแล้ว
+
+#### `portfolio_value_history(account_id, since?, interval="auto")`
+มูลค่าของบัญชีกองทุนหนึ่งตามเวลา (หน่วยที่ถือวันนั้น × NAV วันนั้น) คู่กับต้นทุน ตั้งแต่รายการซื้อแรก ใช้ดูว่าพอร์ตโตหรือลดเท่าไหร่ และช่วงไหนขาดทุน
+
+| พารามิเตอร์ | ชนิด | |
+|---|---|---|
+| `account_id` | int | บัญชีประเภท investment จาก `accounts` หรือ `fund_portfolio` |
+| `since` | string | `YYYY-MM-DD` ไม่บังคับ |
+| `interval` | `auto` \| `day` \| `week` \| `month` | เหมือน `fund_nav_history` |
+
+ผลลัพธ์: `account_id`, `name`, `funds[]`, `interval`, `points[]` (`date`, `value`, `cost`, `by_fund` มูลค่าแยกตามรหัส), `stats` (ของ `value`; การขายหน่วยออกนับเป็นมูลค่าที่ลดลงด้วย) บัญชีที่ไม่ใช่ investment หรือไม่ใช่ของผู้ใช้ตอบเป็น error
 
 ### ข้อมูลอ้างอิง
 

@@ -1,4 +1,4 @@
-import type { Account, AccountInput, AccountLedger, FundAccount, FundPosition, FundSwitchInput, FundTrade, FundTradeInput, NavRefresh, TradeNav, UnlinkedTransfer, ApiToken, McpConnection, Balance, Category, CreatedApiToken, EmailSource, GmailStatus, Me, MerchantRule, User, Receipt, TransferMatch, ConfirmResult, Status, Summary, SyncResult, Txn, TxnDetails, ReportExpense, ReportIncome, WalletApplyResult, WalletEntry, WalletScreenshot } from "./types";
+import type { Account, AccountInput, AccountLedger, FundAccount, FundPosition, FundSwitchInput, FundTrade, FundTradeInput, FundValueHistory, NavRefresh, NavSync, TradeNav, UnlinkedTransfer, ApiToken, McpConnection, Balance, Category, CreatedApiToken, EmailSource, GmailStatus, Me, MerchantRule, User, Receipt, TransferMatch, ConfirmResult, Status, Summary, SyncResult, Txn, TxnDetails, ReportExpense, ReportIncome, WalletApplyResult, WalletEntry, WalletScreenshot } from "./types";
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -156,6 +156,11 @@ export const api = {
   createFund: (body: { account_id: number; code: string; name: string | null }) =>
     call<FundPosition & { lookup: "found" | "not_listed" | "error" | "off" | "skipped" }>("/funds", { method: "POST", body: JSON.stringify(body) }),
   refreshFundNavs: () => call<NavRefresh>("/funds/refresh-nav", { method: "POST" }),
+  syncFundNavs: () => call<NavSync>("/funds/navs/sync", { method: "POST" }),
+  fundValueHistory: (accountId: number, since: string | undefined, interval: "day" | "week" | "month") =>
+    call<FundValueHistory>(
+      `/funds/accounts/${accountId}/value-history?interval=${interval}${since ? `&since=${since}` : ""}`,
+    ),
   fundNav: (code: string, date: string) => call<TradeNav>(`/funds/nav?code=${encodeURIComponent(code)}&date=${date}`),
   updateFund: (id: number, body: { code?: string; name?: string | null; is_active?: boolean; nav?: string | null; nav_date?: string | null }) =>
     call<FundPosition>(`/funds/${id}`, { method: "PATCH", body: JSON.stringify(body) }),

@@ -23,12 +23,14 @@ from sqlalchemy import text
 
 from app import auth, oauth
 from app.db import get_engine
+from funds import history as nav_history
 from funds import service as funds
 from ledger import balances as bal
 from ledger import reports
 from ledger import transactions as txns
 
 BANGKOK = timezone(timedelta(hours=7))
+MAX_POINTS = 400      # a history longer than this is sent weekly or monthly (interval "auto")
 READ_ONLY = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False)
 
 INSTRUCTIONS = """Personal expense tracker of a person in Thailand (amounts in THB, times in Bangkok time).
@@ -69,6 +71,15 @@ def _month(month: Optional[str]) -> Optional[str]:
     if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", month):
         raise ToolError("month must be YYYY-MM, e.g. 2026-11")
     return month
+
+
+def _date(value: Optional[str]) -> Optional[date]:
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        raise ToolError("dates are YYYY-MM-DD, e.g. 2026-01-01") from None
 
 
 async def _read(fn) -> Any:
@@ -206,6 +217,68 @@ def build() -> MCPServer:
     async def fund_portfolio() -> dict:
         """Investment accounts: cash, funds with units, average cost, market value and gains, and totals."""
         return {"accounts": await _read(lambda conn, uid: funds.portfolio(conn, uid))}
+
+    @server.tool(annotations=READ_ONLY)
+    async def fund_trades(account_id: int, fund_code: Optional[str] = None, limit: int = 100) -> dict:
+        """Buys and sells of one investment account (account_id from accounts or fund_portfolio), newest first:
+        date, fund, units, amount, NAV, where the money came from (buy) or went (sell), and the other fund of a
+        switch. Optionally only one fund (fund_code, e.g. K-USXNDQ-A(A)). `unlinked` lists transfers into or
+        out of the account that no trade explains yet."""
+        n = max(1, min(limit, 500))
+        code = (fund_code or "").strip().casefold() or None
+
+        def run(conn, uid):
+            h = funds.history(conn, uid, account_id)
+            rows = [t for t in h["items"] if code is None or t["fund_code"].casefold() == code]
+            keep = ("id", "trade_date", "fund_code", "side", "units", "amount", "nav", "funding", "other_account",
+                    "switch_fund_code", "transfer_status", "note")
+            return {"account_id": h["account_id"], "name": h["name"], "total": len(rows),
+                    "trades": [{k: t[k] for k in keep if t[k] is not None} for t in rows[:n]],
+                    "unlinked": h["unlinked"]}
+        try:
+            return await _read(run)
+        except funds.Invalid as e:      # not this person's account, or not an investment account
+            raise ToolError(str(e)) from None
+
+    def _fit(points: list[dict], interval: str) -> tuple[list[dict], str]:
+        """auto: daily when that is at most MAX_POINTS points, else weekly, else monthly."""
+        if interval != "auto":
+            return nav_history.downsample(points, nav_history.check_interval(interval)), interval
+        for step in ("day", "week", "month"):
+            fitted = nav_history.downsample(points, step)
+            if len(fitted) <= MAX_POINTS or step == "month":
+                return fitted, step
+
+    @server.tool(annotations=READ_ONLY)
+    async def fund_nav_history(fund_code: str, since: Optional[str] = None,
+                               interval: Literal["auto", "day", "week", "month"] = "auto") -> dict:
+        """Stored daily NAVs of one fund (by code, e.g. K-USXNDQ-A(A); see fund_portfolio), oldest first, with
+        stats over the period: first, last, change_pct, high, low, max_drawdown_pct. since = YYYY-MM-DD.
+        Fetched from Finnomena every day; history goes back as far as Finnomena has it."""
+        start = _date(since)
+
+        def run(conn, uid):
+            s = nav_history.series(conn, fund_code, start)
+            s["points"], s["interval"] = _fit(s["points"], interval)
+            return s
+        return await _read(run)
+
+    @server.tool(annotations=READ_ONLY)
+    async def portfolio_value_history(account_id: int, since: Optional[str] = None,
+                                      interval: Literal["auto", "day", "week", "month"] = "auto") -> dict:
+        """What one investment account's funds were worth over time (units held that day x that day's NAV) next
+        to their cost, from the first trade, with value per fund (by_fund) and stats (change_pct,
+        max_drawdown_pct). account_id from accounts or fund_portfolio; since = YYYY-MM-DD."""
+        start = _date(since)
+
+        def run(conn, uid):
+            h = nav_history.value_history(conn, uid, account_id, start)
+            h["points"], h["interval"] = _fit(h["points"], interval)
+            return h
+        try:
+            return await _read(run)
+        except txns.Invalid as e:      # not this person's account, or not an investment account
+            raise ToolError(str(e)) from None
 
     return server
 
