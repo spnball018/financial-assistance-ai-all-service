@@ -260,6 +260,34 @@ erDiagram
         timestamptz revoked_at
     }
 
+    oauth_clients {
+        text client_id PK "Claude ลงทะเบียนเอง (RFC 7591)"
+        jsonb info "redirect_uris, client_name"
+        timestamptz created_at
+    }
+
+    oauth_codes {
+        text code_hash PK "sha256, ใช้ได้ครั้งเดียว 5 นาที"
+        text client_id FK
+        int user_id FK
+        jsonb data "redirect_uri, code_challenge, scopes, resource"
+        timestamptz expires_at
+    }
+
+    oauth_tokens {
+        bigint id PK
+        text token_hash UK "sha256 ของ mcp_at_ / mcp_rt_"
+        text kind "access | refresh"
+        text grant_id "การอนุญาตหนึ่งครั้ง (refresh แล้วยังเหมือนเดิม)"
+        text client_id FK
+        int user_id FK
+        text_arr scopes "read"
+        text resource "PUBLIC_BASE_URL/mcp"
+        timestamptz expires_at
+        timestamptz last_used_at
+        timestamptz revoked_at
+    }
+
     accounts ||--o{ transactions : "account_id"
     accounts |o--o{ transactions : "counter_account_id"
     accounts |o--o{ email_sources : "account_id"
@@ -287,6 +315,9 @@ erDiagram
     users ||--o{ auth_sessions : "user_id"
     users ||--o| gmail_connections : "user_id"
     users ||--o{ api_tokens : "user_id"
+    users ||--o{ oauth_tokens : "user_id"
+    oauth_clients ||--o{ oauth_codes : "client_id"
+    oauth_clients ||--o{ oauth_tokens : "client_id"
 ```
 
 ## กลุ่มของตาราง
@@ -303,6 +334,7 @@ erDiagram
 | กองทุน | `funds`, `fund_trades` | กองทุนในบัญชี investment และรายการซื้อ/ขาย/สับเปลี่ยน (หน่วย, ยอดเงิน, NAV) ที่บันทึกเอง บัญชีกองทุนไม่มีเงินค้าง เงินเข้า/ออกเป็น transfer ใน `transactions` และแต่ละรายการซื้อขายชี้ไปที่ transfer ของตัวเองด้วย `transaction_id` (ยกเว้น `held_before` และ `switch`) |
 | ความลับ | `settings` | ค่าที่เข้ารหัส เช่น รหัส PDF ของ KTC |
 | ผู้ใช้ | `users`, `auth_sessions`, `api_tokens`, `gmail_connections` | ผู้ใช้ (admin/member), session จาก Google sign-in และ API token เก็บแค่ sha256 ของความลับ, Gmail ของแต่ละคน (refresh token เข้ารหัส) |
+| Claude connector (MCP) | `oauth_clients`, `oauth_codes`, `oauth_tokens` | OAuth ของ MCP connector: client ที่ลงทะเบียน, code ครั้งเดียว และ token อ่านอย่างเดียว (เก็บแค่ sha256) ใช้ได้แค่ `/mcp` |
 
 ## View
 

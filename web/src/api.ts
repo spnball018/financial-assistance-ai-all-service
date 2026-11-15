@@ -1,4 +1,4 @@
-import type { Account, AccountInput, AccountLedger, FundAccount, FundPosition, FundSwitchInput, FundTrade, FundTradeInput, NavRefresh, TradeNav, UnlinkedTransfer, ApiToken, Balance, Category, CreatedApiToken, EmailSource, GmailStatus, Me, MerchantRule, User, Receipt, TransferMatch, ConfirmResult, Status, Summary, SyncResult, Txn, TxnDetails, ReportExpense, ReportIncome, WalletApplyResult, WalletEntry, WalletScreenshot } from "./types";
+import type { Account, AccountInput, AccountLedger, FundAccount, FundPosition, FundSwitchInput, FundTrade, FundTradeInput, NavRefresh, TradeNav, UnlinkedTransfer, ApiToken, McpConnection, Balance, Category, CreatedApiToken, EmailSource, GmailStatus, Me, MerchantRule, User, Receipt, TransferMatch, ConfirmResult, Status, Summary, SyncResult, Txn, TxnDetails, ReportExpense, ReportIncome, WalletApplyResult, WalletEntry, WalletScreenshot } from "./types";
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -46,6 +46,9 @@ export const api = {
   createToken: (name: string, expires_in_days: number | null) =>
     call<CreatedApiToken>("/auth/tokens", { method: "POST", body: JSON.stringify({ name, expires_in_days }) }),
   revokeToken: (id: number) => noContent(`/auth/tokens/${id}`, { method: "DELETE" }),
+  mcpConnections: () => call<McpConnection[]>("/auth/mcp-connections"),
+  revokeMcpConnection: (grantId: string) =>
+    noContent(`/auth/mcp-connections/${encodeURIComponent(grantId)}`, { method: "DELETE" }),
   gmailStatus: () => call<GmailStatus>("/gmail/status"),
   disconnectGmail: () => noContent("/gmail/connection", { method: "DELETE" }),
   users: () => call<User[]>("/users"),

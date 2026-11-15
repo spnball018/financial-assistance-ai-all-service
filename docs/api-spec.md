@@ -53,6 +53,18 @@ Google redirect กลับมาที่ `PUBLIC_BASE_URL/api/auth/callback` 
 #### ✅ `GET /auth/tokens` · `POST /auth/tokens` · `DELETE /auth/tokens/{id}` (ต้องเข้าสู่ระบบผ่านหน้าเว็บ)
 token ของตัวเองเท่านั้น `POST` body `{"name": "bruno", "expires_in_days": 90}` (`null` = ไม่หมดอายุ, 1–3650) → 201 พร้อม `token` ที่แสดงครั้งเดียว (DB เก็บแค่ sha256) รายการแสดง `token_prefix` (8 ตัวแรก), `created_at`, `last_used_at`, `expires_at`, `revoked_at` · `DELETE` = ยกเลิก (204, 404 ถ้าไม่ใช่ของตัวเอง)
 
+#### ✅ `GET /auth/mcp-connections` · `DELETE /auth/mcp-connections/{grant_id}` (ต้องเข้าสู่ระบบผ่านหน้าเว็บ)
+Claude connector ที่อนุญาตไว้และยังมี token ใช้ได้ (ดู "MCP สำหรับ Claude" ข้างล่าง): `[{"grant_id": "…", "client_id": "…", "client_name": "Claude", "connected_at": "…", "last_used_at": "…"}]` · `DELETE` = ยกเลิกทุก token ของการอนุญาตนั้น (204, 404 ถ้าไม่ใช่ของตัวเอง)
+
+#### ✅ MCP สำหรับ Claude (claude.ai / แอปมือถือ) อ่านอย่างเดียว
+รายละเอียด tool ทั้งหมด: [mcp.md](mcp.md)
+expense-api เป็น MCP server แบบ Streamable HTTP (stateless, ตอบ JSON) ที่ **`https://DOMAIN/mcp`** (nginx ส่ง `/mcp`, `/authorize`, `/token`, `/register`, `/revoke`, `/.well-known/oauth-*` เข้า expense-api ตรงๆ ไม่ผ่าน `/api`) เพิ่มใน claude.ai → Settings → Connectors → Add custom connector
+- **เข้าสู่ระบบ:** OAuth 2.1 ตาม MCP spec (MCP Python SDK เป็นคนเสิร์ฟ endpoint และตรวจ PKCE S256, อายุ code, redirect_uri) issuer = `PUBLIC_BASE_URL` · Claude ลงทะเบียนตัวเองผ่าน `POST /register` ได้เฉพาะ redirect URI บน `https://claude.ai` / `https://claude.com` หรือ `http://localhost` (เช่น MCP Inspector) ไม่เกิน 200 client · `/authorize` ส่งต่อไปหน้า `GET /api/oauth/consent` ที่ต้องเข้าสู่ระบบด้วย Google ก่อน (ยังไม่เข้าระบบ → `/api/auth/login?next=…` แล้วกลับมา) กด "อนุญาต" (`POST /api/oauth/consent` มี CSRF token ในฟอร์ม) → code ใช้ได้ครั้งเดียว 5 นาที → `POST /token` ได้ access token `mcp_at_…` (1 ชั่วโมง) + refresh token `mcp_rt_…` (60 วัน, หมุนทุกครั้งที่ refresh) scope `read`
+- **แยกจาก API token:** token ของ MCP เปิดได้แค่ `/mcp` เรียก REST API ไม่ได้ (401) และ API token (`fat_…`) เปิด `/mcp` ไม่ได้ · ปิดการใช้งานผู้ใช้แล้ว token ใช้ไม่ได้ทันที
+- **ข้อมูลของใครของมัน:** ทุก tool อ่าน user id จาก access token เท่านั้น ไม่รับ user id จากผู้เรียก
+- **tool (ทั้งหมด `readOnlyHint`, ไม่มี tool ที่แก้ข้อมูล):** `monthly_summary(month)`, `category_expenses(month, category_id)`, `income(month)`, `search_transactions(month?, status?, account_id?, text_contains?, limit≤100)` (ค้นชื่อผู้รับ/รายละเอียด/โน้ต รวมรายการย่อย), `pending_review(limit)`, `transaction_details(transaction_id)` (ไม่รวมเนื้ออีเมล), `accounts()`, `categories()`, `account_balances()`, `account_ledger(account_id, limit≤200)`, `fund_portfolio()` เวลาเป็นเวลาไทย ยอดเป็นบาท
+- ถ้า Cloudflare (Bot Fight Mode / WAF) บล็อก server ของ Anthropic ให้ตั้ง WAF rule skip path ข้างบน
+
 #### ✅ `GET /users` · `POST /users` · `PATCH /users/{id}` (เฉพาะ admin)
 - `POST` body `{"email": "kid@example.com", "role": "member"}` → 201 (409 ถ้ามีแล้ว) อีเมลเก็บเป็นตัวเล็ก
 - `PATCH` body `{"role": "admin"}` หรือ `{"is_active": false}` ปิดการใช้งานแล้ว session ถูกลบทันที และ token ใช้ไม่ได้ (ข้อมูลยังอยู่) ปิดหรือลดสิทธิ์ตัวเองไม่ได้ (422)

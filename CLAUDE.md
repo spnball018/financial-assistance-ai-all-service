@@ -51,7 +51,7 @@ docker compose up -d postgres
 (cd expense-api && TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/financial_test .venv/bin/python -m pytest)
 ```
 
-Design docs live in `docs/`: start with `handoff.md` (current state, files not in git, next tasks), then `expense-tracker-plan.md` (plan + status), `sync-engine.md`, `api-spec.md`, `er-diagram.md`, `ktc-track.md`.
+Design docs live in `docs/`: start with `handoff.md` (current state, files not in git, next tasks), then `expense-tracker-plan.md` (plan + status), `sync-engine.md`, `api-spec.md`, `er-diagram.md`, `ktc-track.md`, `mcp.md` (MCP server for Claude: tools, auth).
 
 `credentials.json` must be in the repo root, next to `docker-compose.yml`. It and `token.json` are gitignored. Each FastAPI service serves Swagger at `/docs`, and the healthchecks call that same URL.
 
@@ -60,6 +60,8 @@ Design docs live in `docs/`: start with `handoff.md` (current state, files not i
 Data is per user (migration 0012): every data table has `user_id`, and every function that touches data takes `uid` as its second argument (after `conn`/`engine`) and filters by it; routers get it from `Depends(current_user_id)`. `categories` are shared. Composite foreign keys `(x_id, user_id)` stop rows from pointing at another user's data. `tests/test_isolation.py` covers this.
 
 New routers: mount them on `protected` in `app/main.py` (never on `app` directly); `tests/test_auth.py` calls every OpenAPI path signed out and fails on any that is not 401. The tests' autouse fixture `signed_in` (conftest) signs every other test in as user 1.
+
+MCP for Claude (read-only): `app/mcp_server.py` serves `/mcp` and, through the MCP SDK, the OAuth routes (`/authorize`, `/token`, `/register`, `/revoke`, `/.well-known/oauth-*`), mounted last in `app/main.py`; storage and policy in `app/oauth.py`, consent page `app/routers/oauth.py` (`/api/oauth/consent`). Its `mcp_` tokens open only `/mcp` and `require_user` never accepts them; tools take the user id from the token only. Keep every tool read-only (`tests/test_mcp.py` checks `readOnlyHint`).
 
 Migrations: add `expense-api/alembic/versions/NNNN_*.py` with a linear `down_revision`, then update `docs/er-diagram.md` (and re-render the PNG) and `docs/api-spec.md` for any API change.
 

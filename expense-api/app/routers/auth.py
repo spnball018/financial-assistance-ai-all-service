@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 
-from app import auth, gmail_connections, google_oauth, secrets
+from app import auth, gmail_connections, google_oauth, oauth, secrets
 from app.auth import Principal, require_session, require_user
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -148,3 +148,15 @@ def create_token(body: TokenIn, principal: Principal = Depends(require_session))
 def revoke_token(token_id: int, principal: Principal = Depends(require_session)):
     if not auth.revoke_token(principal.user_id, token_id):
         raise HTTPException(status_code=404, detail="Token not found")
+
+
+@router.get("/mcp-connections")
+def list_mcp_connections(principal: Principal = Depends(require_session)):
+    """Claude connectors you approved (app/oauth.py) that can still read your data."""
+    return oauth.list_connections(principal.user_id)
+
+
+@router.delete("/mcp-connections/{grant_id}", status_code=204)
+def revoke_mcp_connection(grant_id: str, principal: Principal = Depends(require_session)):
+    if not oauth.revoke_connection(principal.user_id, grant_id):
+        raise HTTPException(status_code=404, detail="Connection not found")

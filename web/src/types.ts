@@ -300,6 +300,15 @@ export interface ApiToken {
   revoked_at: string | null;
 }
 
+/** A Claude connector (MCP) the user approved; it can read, never change. */
+export interface McpConnection {
+  grant_id: string;
+  client_id: string;
+  client_name: string | null;
+  connected_at: string;
+  last_used_at: string | null;
+}
+
 /** Only the create response carries the token itself. */
 export interface CreatedApiToken extends ApiToken {
   token: string;

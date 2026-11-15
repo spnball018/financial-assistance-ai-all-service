@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
-import { ApiTokensSection, GmailSection, UsersSection } from "./AccessSettings";
+import { ApiTokensSection, GmailSection, McpConnectionsSection, UsersSection } from "./AccessSettings";
 import { EmailSourcesSection, KtcPasswordSection, RulesSection } from "./SettingsExtras";
 import type { Me } from "./types";
 import type { Account, AccountInput, AccountType } from "./types";
@@ -235,6 +235,7 @@ export function SettingsPage({ me }: { me: Me }) {
       {tab === "rules" && <RulesSection />}
       {tab === "access" && (
         <>
+          <McpConnectionsSection />
           <ApiTokensSection />
           {me.role === "admin" && <UsersSection meId={me.id} />}
         </>

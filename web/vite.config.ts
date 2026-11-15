@@ -11,6 +11,9 @@ export default defineConfig({
     proxy: {
       // X-Forwarded-Prefix lets expense-api's Swagger (/api/docs) find its spec behind the proxy
       "/api": { target, changeOrigin: true, rewrite: (p) => p.replace(/^\/api/, ""), headers: { "X-Forwarded-Prefix": "/api" } },
+      // MCP connector and its OAuth routes (same paths as web/nginx.conf)
+      "^/(mcp|authorize|token|register|revoke)([?#]|$)": { target, changeOrigin: true },  // Vite matches path+query
+      "/.well-known/oauth-": { target, changeOrigin: true },
     },
   },
 });

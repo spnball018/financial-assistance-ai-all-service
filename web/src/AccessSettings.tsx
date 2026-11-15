@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
 import { fmtWhen } from "./format";
-import type { ApiToken, CreatedApiToken, GmailStatus, User } from "./types";
+import type { ApiToken, CreatedApiToken, GmailStatus, McpConnection, User } from "./types";
 
 const GMAIL_RESULT: Record<string, { ok: boolean; text: string }> = {
   connected: { ok: true, text: "เชื่อม Gmail แล้ว กด ดึงอีเมลใหม่ ในหน้าตรวจรายการได้เลย" },
@@ -87,6 +87,76 @@ function tokenState(t: ApiToken): string {
   if (t.revoked_at) return "ยกเลิกแล้ว";
   if (t.expires_at && new Date(t.expires_at) < new Date()) return "หมดอายุ";
   return "ใช้งานได้";
+}
+
+/** Claude (claude.ai web / mobile) reads the data through the MCP connector at <site>/mcp; connecting asks
+ * for Google sign-in and approval. Lists what was approved, to revoke it. */
+export function McpConnectionsSection() {
+  const [items, setItems] = useState<McpConnection[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const url = `${window.location.origin}/mcp`;
+  const load = () => api.mcpConnections().then(setItems, (e: Error) => setError(e.message));
+  useEffect(() => {
+    load();
+  }, []);
+
+  const revoke = async (c: McpConnection) => {
+    if (!confirm(`ยกเลิกการเชื่อมต่อ "${c.client_name ?? "Claude"}"? Claude จะอ่านข้อมูลไม่ได้อีกจนกว่าจะเชื่อมใหม่`)) return;
+    try {
+      await api.revokeMcpConnection(c.grant_id);
+      await load();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+
+  return (
+    <section className="settings-section">
+      <h2>เชื่อมต่อ Claude (MCP)</h2>
+      <p className="muted small">
+        ให้ Claude บน claude.ai หรือแอปมือถืออ่านรายการ ยอดคงเหลือ และสรุปรายเดือนของคุณ <b>อ่านอย่างเดียว แก้ไขอะไรไม่ได้</b>{" "}
+        เพิ่มใน claude.ai → Settings → Connectors → Add custom connector แล้วใส่ URL นี้ จากนั้นเข้าสู่ระบบด้วย Google และกดอนุญาต
+      </p>
+      <div className="toolbar">
+        <code className="token-value">{url}</code>
+        <button onClick={() => navigator.clipboard.writeText(url).then(() => setCopied(true))}>
+          {copied ? "คัดลอกแล้ว" : "คัดลอก"}
+        </button>
+      </div>
+      {error && <div className="message error">{error}</div>}
+      {items.length === 0 ? (
+        <p className="muted small">ยังไม่มีการเชื่อมต่อ</p>
+      ) : (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>โปรแกรม</th>
+                <th>เชื่อมเมื่อ</th>
+                <th>ใช้ล่าสุด</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((c) => (
+                <tr key={c.grant_id}>
+                  <td>{c.client_name ?? "—"}</td>
+                  <td>{fmtWhen(c.connected_at, true)}</td>
+                  <td>{c.last_used_at ? fmtWhen(c.last_used_at, true) : "—"}</td>
+                  <td>
+                    <button className="link danger" onClick={() => revoke(c)}>
+                      ยกเลิก
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
 }
 
 export function ApiTokensSection() {

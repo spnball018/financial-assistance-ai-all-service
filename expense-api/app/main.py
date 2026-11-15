@@ -1,5 +1,6 @@
 import os
 import re
+from contextlib import asynccontextmanager
 from typing import Optional
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
@@ -9,17 +10,25 @@ from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
+from app import mcp_server
 from app.auth import current_user_id, require_user
 from app.db import get_engine
-from app.routers import (accounts, auth, categorize, funds, gmail, ktc, receipts, reconcile, rules, sync, transactions,
-                         users, wallets)
+from app.routers import (accounts, auth, categorize, funds, gmail, ktc, oauth, receipts, reconcile, rules, sync,
+                         transactions, users, wallets)
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    async with mcp_server.server.session_manager.run():   # the /mcp transport needs its task group
+        yield
+
 
 # Swagger is mounted below behind require_user, like everything else
 app = FastAPI(
     title="Expense API",
     description="Sync, reconcile, categorize and manage expense transactions. "
                 "Sign in through the web UI, or send `Authorization: Bearer <API token>`.",
-    docs_url=None, redoc_url=None, openapi_url=None,
+    docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan,
 )
 
 # Refuse requests whose Host is not ours, so a web page that DNS-rebinds its own domain to 127.0.0.1
@@ -27,8 +36,10 @@ app = FastAPI(
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=[
     h.strip() for h in os.environ.get("ALLOWED_HOSTS", "localhost,127.0.0.1,expense-api,testserver").split(",") if h.strip()])
 
-# Open without sign-in: /health and /auth/login, /auth/callback, /auth/logout (tests/test_auth.py)
+# Open without sign-in: /health and /auth/login, /auth/callback, /auth/logout (tests/test_auth.py), and the
+# MCP connector's consent page (it checks the session itself)
 app.include_router(auth.router)
+app.include_router(oauth.router)
 
 protected = APIRouter(dependencies=[Depends(require_user)])
 
@@ -105,3 +116,7 @@ def update_email_source(source: str, body: EmailSourceUpdate, uid: int = Depends
 for r in (accounts, ktc, gmail, sync, categorize, transactions, rules, receipts, reconcile, users, wallets, funds):
     protected.include_router(r.router)
 app.include_router(protected)
+
+# Last, so every route above wins: the MCP server for Claude at /mcp, with its OAuth routes (/authorize, /token,
+# /register, /revoke, /.well-known/oauth-*). /mcp needs a connector token, which nothing above accepts.
+app.mount("/", mcp_server.http_app)

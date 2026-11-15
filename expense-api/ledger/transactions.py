@@ -45,9 +45,9 @@ def check_category(conn, category_id: int, kind: str = "expense") -> None:
 
 
 def list_trees(conn, uid: int, *, status: Optional[str] = None, account_id: Optional[int] = None,
-               month: Optional[str] = None, limit: int = 200, offset: int = 0) -> dict:
+               month: Optional[str] = None, limit: int = 200, offset: int = 0, search: Optional[str] = None) -> dict:
     """Root transactions (newest first) with their descendants nested under `children`.
-    Filters apply to the root; a tree is always returned whole."""
+    Filters apply to the root (search also matches a row under it); a tree is always returned whole."""
     where, params = ["t.user_id = :uid", "t.parent_id IS NULL"], {"uid": uid, "limit": limit, "offset": offset}
     if status:
         where.append("t.status = :status")
@@ -58,6 +58,14 @@ def list_trees(conn, uid: int, *, status: Optional[str] = None, account_id: Opti
     if month:
         where.append("to_char(t.occurred_at AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM') = :month")
         params["month"] = month
+    if search:
+        # payee, description or note of the root or of any row under it (an order item, a receipt line)
+        where.append("""EXISTS (
+            WITH RECURSIVE tree AS (SELECT id FROM ledger.transactions WHERE id = t.id
+              UNION ALL SELECT c.id FROM ledger.transactions c JOIN tree ON c.parent_id = tree.id)
+            SELECT 1 FROM ledger.transactions s JOIN tree ON tree.id = s.id
+            WHERE concat_ws(' ', s.merchant_raw, s.description, s.note) ILIKE :search)""")
+        params["search"] = "%" + search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
     cond = " AND ".join(where)
     total = conn.execute(text(f"SELECT count(*) FROM ledger.transactions t WHERE {cond}"), params).scalar()
     roots = [dict(r._mapping) for r in conn.execute(text(
@@ -318,14 +326,16 @@ def details(conn, uid: int, txn_id: int) -> dict:
         FROM ledger.transactions t JOIN ledger.accounts a ON a.id = t.account_id
         LEFT JOIN ledger.accounts ca ON ca.id = t.counter_account_id
         LEFT JOIN ledger.categories k ON k.id = t.category_id
-        WHERE t.id = :id"""), {"id": txn_id}).one()
+        WHERE t.id = :id AND t.user_id = :uid"""), {"id": txn_id, "uid": uid}).one()
     t.update(extra._mapping)
     t["ancestors"] = [dict(r._mapping) for r in conn.execute(text("""
         WITH RECURSIVE up AS (
           SELECT parent_id, 0 AS d FROM ledger.transactions WHERE id = :id AND user_id = :uid
-          UNION ALL SELECT p.parent_id, up.d + 1 FROM ledger.transactions p JOIN up ON p.id = up.parent_id)
+          UNION ALL SELECT p.parent_id, up.d + 1 FROM ledger.transactions p JOIN up ON p.id = up.parent_id
+            WHERE p.user_id = :uid)
         SELECT t.id, t.node_type, t.amount, t.merchant_raw, t.description FROM up
-        JOIN ledger.transactions t ON t.id = up.parent_id ORDER BY up.d DESC"""), {"id": txn_id, "uid": uid})]
+        JOIN ledger.transactions t ON t.id = up.parent_id AND t.user_id = :uid ORDER BY up.d DESC"""),
+        {"id": txn_id, "uid": uid})]
     email_id = _email_id(conn, uid, txn_id)
     email = conn.execute(text(
         "SELECT id, source, subject, sender, received_at, html_body <> '' AS has_html FROM ledger.raw_emails "
