@@ -338,7 +338,6 @@ export function ReviewPage({ categories, accounts }: { categories: Category[]; a
         ref={fileInput}
         type="file"
         accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
-        capture="environment"
         hidden
         onChange={(e) => onFile(e.target.files?.[0])}
       />
